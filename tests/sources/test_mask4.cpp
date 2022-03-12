@@ -30,7 +30,75 @@
 #include <rtm/mask4i.h>
 #include <rtm/mask4q.h>
 
+#include <cstring>
+
 using namespace rtm;
+
+template<typename IntType, typename Mask4Type>
+inline Mask4Type reference_mask_and(const Mask4Type& input0, const Mask4Type& input1)
+{
+	IntType input0_[4];
+	IntType input1_[4];
+
+	static_assert(sizeof(Mask4Type) == sizeof(input0_), "Unexpected size");
+	std::memcpy(&input0_[0], &input0, sizeof(Mask4Type));
+	std::memcpy(&input1_[0], &input1, sizeof(Mask4Type));
+
+	IntType result_[4];
+	result_[0] = input0_[0] & input1_[0];
+	result_[1] = input0_[1] & input1_[1];
+	result_[2] = input0_[2] & input1_[2];
+	result_[3] = input0_[3] & input1_[3];
+
+	Mask4Type result;
+	std::memcpy(&result, &result_[0], sizeof(Mask4Type));
+
+	return result;
+}
+
+template<typename IntType, typename Mask4Type>
+inline Mask4Type reference_mask_or(const Mask4Type& input0, const Mask4Type& input1)
+{
+	IntType input0_[4];
+	IntType input1_[4];
+
+	static_assert(sizeof(Mask4Type) == sizeof(input0_), "Unexpected size");
+	std::memcpy(&input0_[0], &input0, sizeof(Mask4Type));
+	std::memcpy(&input1_[0], &input1, sizeof(Mask4Type));
+
+	IntType result_[4];
+	result_[0] = input0_[0] | input1_[0];
+	result_[1] = input0_[1] | input1_[1];
+	result_[2] = input0_[2] | input1_[2];
+	result_[3] = input0_[3] | input1_[3];
+
+	Mask4Type result;
+	std::memcpy(&result, &result_[0], sizeof(Mask4Type));
+
+	return result;
+}
+
+template<typename IntType, typename Mask4Type>
+inline Mask4Type reference_mask_xor(const Mask4Type& input0, const Mask4Type& input1)
+{
+	IntType input0_[4];
+	IntType input1_[4];
+
+	static_assert(sizeof(Mask4Type) == sizeof(input0_), "Unexpected size");
+	std::memcpy(&input0_[0], &input0, sizeof(Mask4Type));
+	std::memcpy(&input1_[0], &input1, sizeof(Mask4Type));
+
+	IntType result_[4];
+	result_[0] = input0_[0] ^ input1_[0];
+	result_[1] = input0_[1] ^ input1_[1];
+	result_[2] = input0_[2] ^ input1_[2];
+	result_[3] = input0_[3] ^ input1_[3];
+
+	Mask4Type result;
+	std::memcpy(&result, &result_[0], sizeof(Mask4Type));
+
+	return result;
+}
 
 template<typename MaskType, typename IntType>
 static void test_mask_impl()
@@ -121,6 +189,101 @@ static void test_mask_impl()
 		CHECK(mask_any_true3(mask6) == true);
 		CHECK(mask_any_true3(mask7) == true);
 		CHECK(mask_any_true3(mask8) == true);
+	}
+
+	{
+		const MaskType all_true = mask_set(true, true, true, true);
+		const MaskType all_false = mask_set(false, false, false, false);
+
+		CHECK(!mask_all_equal2(all_true, mask_set(false, false, false, false)));
+		CHECK(!mask_all_equal2(all_true, mask_set(true, false, false, false)));
+		CHECK(mask_all_equal2(all_true, mask_set(true, true, false, false)));
+		CHECK(mask_all_equal2(all_true, mask_set(true, true, true, false)));
+		CHECK(mask_all_equal2(all_true, mask_set(true, true, true, true)));
+
+		CHECK(mask_all_equal2(all_false, mask_set(false, false, false, false)));
+		CHECK(mask_all_equal2(all_false, mask_set(false, false, false, true)));
+		CHECK(mask_all_equal2(all_false, mask_set(false, false, true, true)));
+		CHECK(!mask_all_equal2(all_false, mask_set(false, true, true, true)));
+		CHECK(!mask_all_equal2(all_false, mask_set(true, true, true, true)));
+
+		CHECK(!mask_all_equal3(all_true, mask_set(false, false, false, false)));
+		CHECK(!mask_all_equal3(all_true, mask_set(true, false, false, false)));
+		CHECK(!mask_all_equal3(all_true, mask_set(true, true, false, false)));
+		CHECK(mask_all_equal3(all_true, mask_set(true, true, true, false)));
+		CHECK(mask_all_equal3(all_true, mask_set(true, true, true, true)));
+
+		CHECK(mask_all_equal3(all_false, mask_set(false, false, false, false)));
+		CHECK(mask_all_equal3(all_false, mask_set(false, false, false, true)));
+		CHECK(!mask_all_equal3(all_false, mask_set(false, false, true, true)));
+		CHECK(!mask_all_equal3(all_false, mask_set(false, true, true, true)));
+		CHECK(!mask_all_equal3(all_false, mask_set(true, true, true, true)));
+
+		CHECK(!mask_all_equal(all_true, mask_set(false, false, false, false)));
+		CHECK(!mask_all_equal(all_true, mask_set(true, false, false, false)));
+		CHECK(!mask_all_equal(all_true, mask_set(true, true, false, false)));
+		CHECK(!mask_all_equal(all_true, mask_set(true, true, true, false)));
+		CHECK(mask_all_equal(all_true, mask_set(true, true, true, true)));
+
+		CHECK(mask_all_equal(all_false, mask_set(false, false, false, false)));
+		CHECK(!mask_all_equal(all_false, mask_set(false, false, false, true)));
+		CHECK(!mask_all_equal(all_false, mask_set(false, false, true, true)));
+		CHECK(!mask_all_equal(all_false, mask_set(false, true, true, true)));
+		CHECK(!mask_all_equal(all_false, mask_set(true, true, true, true)));
+
+		CHECK(!mask_any_equal2(all_true, mask_set(false, false, false, false)));
+		CHECK(mask_any_equal2(all_true, mask_set(true, false, false, false)));
+		CHECK(mask_any_equal2(all_true, mask_set(false, true, false, false)));
+		CHECK(mask_any_equal2(all_true, mask_set(true, true, true, false)));
+		CHECK(mask_any_equal2(all_true, mask_set(true, true, true, true)));
+
+		CHECK(mask_any_equal2(all_false, mask_set(false, false, false, false)));
+		CHECK(mask_any_equal2(all_false, mask_set(false, false, false, true)));
+		CHECK(mask_any_equal2(all_false, mask_set(true, false, true, true)));
+		CHECK(mask_any_equal2(all_false, mask_set(false, true, true, true)));
+		CHECK(!mask_any_equal2(all_false, mask_set(true, true, true, true)));
+
+		CHECK(!mask_any_equal3(all_true, mask_set(false, false, false, false)));
+		CHECK(mask_any_equal3(all_true, mask_set(true, false, false, false)));
+		CHECK(mask_any_equal3(all_true, mask_set(true, true, false, false)));
+		CHECK(mask_any_equal3(all_true, mask_set(true, true, true, false)));
+		CHECK(mask_any_equal3(all_true, mask_set(true, true, true, true)));
+
+		CHECK(mask_any_equal3(all_false, mask_set(false, false, false, false)));
+		CHECK(mask_any_equal3(all_false, mask_set(false, false, false, true)));
+		CHECK(mask_any_equal3(all_false, mask_set(false, false, true, true)));
+		CHECK(mask_any_equal3(all_false, mask_set(false, true, true, true)));
+		CHECK(!mask_any_equal3(all_false, mask_set(true, true, true, true)));
+
+		CHECK(!mask_any_equal(all_true, mask_set(false, false, false, false)));
+		CHECK(mask_any_equal(all_true, mask_set(true, false, false, false)));
+		CHECK(mask_any_equal(all_true, mask_set(true, true, false, false)));
+		CHECK(mask_any_equal(all_true, mask_set(true, true, true, false)));
+		CHECK(mask_any_equal(all_true, mask_set(true, true, true, true)));
+
+		CHECK(mask_any_equal(all_false, mask_set(false, false, false, false)));
+		CHECK(mask_any_equal(all_false, mask_set(false, false, false, true)));
+		CHECK(mask_any_equal(all_false, mask_set(false, false, true, true)));
+		CHECK(mask_any_equal(all_false, mask_set(false, true, true, true)));
+		CHECK(!mask_any_equal(all_false, mask_set(true, true, true, true)));
+	}
+
+	{
+		const MaskType mask0 = mask_set(true, false, true, false);
+		const MaskType mask1 = mask_set(true, true, false, false);
+		const MaskType mask2 = mask_set(false, true, false, true);
+
+		CHECK(mask_all_equal(mask_and(mask0, mask1), reference_mask_and<IntType>(mask0, mask1)));
+		CHECK(mask_all_equal(mask_and(mask0, mask2), reference_mask_and<IntType>(mask0, mask2)));
+		CHECK(mask_all_equal(mask_and(mask1, mask2), reference_mask_and<IntType>(mask1, mask2)));
+
+		CHECK(mask_all_equal(mask_or(mask0, mask1), reference_mask_or<IntType>(mask0, mask1)));
+		CHECK(mask_all_equal(mask_or(mask0, mask2), reference_mask_or<IntType>(mask0, mask2)));
+		CHECK(mask_all_equal(mask_or(mask1, mask2), reference_mask_or<IntType>(mask1, mask2)));
+
+		CHECK(mask_all_equal(mask_xor(mask0, mask1), reference_mask_xor<IntType>(mask0, mask1)));
+		CHECK(mask_all_equal(mask_xor(mask0, mask2), reference_mask_xor<IntType>(mask0, mask2)));
+		CHECK(mask_all_equal(mask_xor(mask1, mask2), reference_mask_xor<IntType>(mask1, mask2)));
 	}
 }
 

@@ -30,6 +30,7 @@ def parse_argv():
 	misc.add_argument('-num_threads', help='No. to use while compiling and regressing')
 	misc.add_argument('-tests_matching', help='Only run tests whose names match this regex')
 	misc.add_argument('-vector_mix_test', action='store_true', help='Enable the vector_mix unit tests')
+	misc.add_argument('-ci', action='store_true', help='Whether or not this is a Continuous Integration build')
 	misc.add_argument('-help', action='help', help='Display this usage information')
 
 	num_threads = multiprocessing.cpu_count()
@@ -43,6 +44,10 @@ def parse_argv():
 		bench=False, run_bench=False, pull_bench=False)
 
 	args = parser.parse_args()
+
+	is_arm64_cpu = False
+	if platform.machine() == 'arm64' or platform.machine() == 'aarch64':
+		is_arm64_cpu = True
 
 	# Sanitize and validate our options
 	if (args.use_avx or args.use_avx2) and not args.use_simd:
@@ -101,11 +106,26 @@ def parse_argv():
 			sys.exit(1)
 	else:
 		if not args.cpu:
-			args.cpu = 'x64'
+			if is_arm64_cpu:
+				args.cpu = 'arm64'
+			else:
+				args.cpu = 'x64'
 
 	if args.cpu == 'arm64':
-		if not args.compiler in ['vs2017', 'vs2019', 'ios', 'android']:
-			print('arm64 is only supported with VS2017, VS2019, Android, and iOS')
+		is_arm_supported = False
+
+		# Cross compilation
+		if args.compiler in ['vs2017', 'vs2019', 'ios', 'android']:
+			is_arm_supported = True
+
+		# Native compilation
+		if platform.system() == 'Darwin' and is_arm64_cpu:
+			is_arm_supported = True
+		elif platform.system() == 'Linux' and is_arm64_cpu:
+			is_arm_supported = True
+
+		if not is_arm_supported:
+			print('arm64 is only supported with VS2017, VS2019, OS X (M1 processors), Linux, Android, and iOS')
 			sys.exit(1)
 	elif args.cpu == 'armv7':
 		if not args.compiler == 'android':
@@ -276,6 +296,11 @@ def do_generate_solution(build_dir, cmake_script_dir, args):
 
 	if not platform.system() == 'Windows':
 		extra_switches.append('-DCMAKE_BUILD_TYPE={}'.format(config.upper()))
+
+	if platform.system() == 'Darwin' and compiler == 'ios' and args.ci:
+		# Disable code signing for CI iOS builds since we just test compilation
+		extra_switches.append('-DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO')
+		extra_switches.append('-DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO')
 
 	toolchain = get_toolchain(compiler, cmake_script_dir)
 	if toolchain:
