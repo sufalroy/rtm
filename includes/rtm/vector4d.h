@@ -27,6 +27,7 @@
 
 #include "rtm/math.h"
 #include "rtm/scalard.h"
+#include "rtm/version.h"
 #include "rtm/impl/compiler_utils.h"
 #include "rtm/impl/memory_utils.h"
 #include "rtm/impl/vector_common.h"
@@ -35,6 +36,8 @@ RTM_IMPL_FILE_PRAGMA_PUSH
 
 namespace rtm
 {
+	RTM_IMPL_VERSION_NAMESPACE_BEGIN
+
 	//////////////////////////////////////////////////////////////////////////
 	// Setters, getters, and casts
 	//////////////////////////////////////////////////////////////////////////
@@ -2007,7 +2010,7 @@ namespace rtm
 		double z_sign = vector_get_z(control_sign);
 		double w_sign = vector_get_w(control_sign);
 
-		return vector_set(std::copysign(x, x_sign), std::copysign(y, y_sign), std::copysign(z, z_sign), std::copysign(w, w_sign));
+		return vector_set(rtm_impl::copysign(x, x_sign), rtm_impl::copysign(y, y_sign), rtm_impl::copysign(z, z_sign), rtm_impl::copysign(w, w_sign));
 #endif
 	}
 
@@ -2256,6 +2259,8 @@ namespace rtm
 		scalard w_ = scalar_atan2(scalard(vector_get_w(y)), scalard(vector_get_w(x)));
 		return vector_set(x_, y_, z_, w_);
 	}
+
+	RTM_IMPL_VERSION_NAMESPACE_END
 }
 
 RTM_IMPL_FILE_PRAGMA_POP
