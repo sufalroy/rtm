@@ -29,8 +29,8 @@ Much thought was put into designing the library for it to be as flexible and pow
 *  Windows VS2015 x86 and x64
 *  Windows (VS2017, VS2019) x86, x64, and ARM64
 *  Windows VS2019 with clang9 x86 and x64
-*  Linux (gcc 5 to 10) x86 and x64
-*  Linux (clang 4 to 11) x86 and x64
+*  Linux (gcc 5 to 11) x86 and x64
+*  Linux (clang 4 to 14) x86 and x64
 *  OS X (Xcode 10.3) x86 and x64
 *  OS X (Xcode 11.7, 12.5, 13.2) x64 and ARM64
 *  Android (NDK 21) ARMv7-A and ARM64
@@ -72,6 +72,7 @@ Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/d
     <td align="center"><a href="https://github.com/CodyDWJones"><img src="https://avatars.githubusercontent.com/u/28773740?v=4?s=100" width="100px;" alt=""/><br /><sub><b>CodyDWJones</b></sub></a><br /><a href="https://github.com/nfrechette/rtm/commits?author=CodyDWJones" title="Code">💻</a> <a href="#platform-CodyDWJones" title="Packaging/porting to new platform">📦</a> <a href="#infra-CodyDWJones" title="Infrastructure (Hosting, Build-Tools, etc)">🚇</a></td>
     <td align="center"><a href="https://github.com/mwerschy"><img src="https://avatars.githubusercontent.com/u/6616804?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Malte Werschy</b></sub></a><br /><a href="https://github.com/nfrechette/rtm/commits?author=mwerschy" title="Code">💻</a> <a href="#platform-mwerschy" title="Packaging/porting to new platform">📦</a></td>
     <td align="center"><a href="https://gitlab.com/intelligide"><img src="https://avatars.githubusercontent.com/u/12529837?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Yoann Potinet</b></sub></a><br /><a href="#infra-intelligide" title="Infrastructure (Hosting, Build-Tools, etc)">🚇</a></td>
+    <td align="center"><a href="https://github.com/operasfantom"><img src="https://avatars.githubusercontent.com/u/31903947?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Pavel Iatchenii</b></sub></a><br /><a href="https://github.com/nfrechette/rtm/commits?author=operasfantom" title="Code">💻</a> <a href="#maintenance-operasfantom" title="Maintenance">🚧</a></td>
   </tr>
 </table>
 
