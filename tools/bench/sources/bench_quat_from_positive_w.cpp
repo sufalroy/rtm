@@ -87,6 +87,25 @@ RTM_FORCE_NOINLINE quatf RTM_SIMD_CALL quat_from_positive_w_sse2_and(vector4f_ar
 	return _mm_shuffle_ps(result_wyzx, result_wyzx, _MM_SHUFFLE(0, 2, 1, 3));
 }
 
+// With VS2019, slower on Ryzen 2990X with SSE2/AVX most likely because it uses more registers
+// The cmpeq ends up converted into a constant load with 0xffffffff no matter what
+RTM_FORCE_NOINLINE quatf RTM_SIMD_CALL quat_from_positive_w_sse2_and_synt(vector4f_arg0 input) RTM_NO_EXCEPT
+{
+	const __m128i zero = _mm_setzero_si128();
+	const __m128i true_mask = _mm_cmpeq_epi32(zero, zero);
+	//const __m128i true_mask = _mm_cmpeq_epi32(_mm_castps_si128(input), _mm_castps_si128(input));
+	const __m128i abs_mask = _mm_srli_epi32(true_mask, 1);
+
+	__m128 x2y2z2 = _mm_mul_ps(input, input);
+	__m128 one = _mm_castsi128_ps(_mm_srli_epi32(_mm_slli_epi32(true_mask, 25), 2));
+	__m128 w_squared = _mm_sub_ss(_mm_sub_ss(_mm_sub_ss(one, x2y2z2), _mm_shuffle_ps(x2y2z2, x2y2z2, _MM_SHUFFLE(1, 1, 1, 1))), _mm_shuffle_ps(x2y2z2, x2y2z2, _MM_SHUFFLE(2, 2, 2, 2)));
+	w_squared = _mm_and_ps(w_squared, _mm_castsi128_ps(abs_mask));
+	__m128 w = _mm_sqrt_ss(w_squared);
+	__m128 input_wyzx = _mm_shuffle_ps(input, input, _MM_SHUFFLE(0, 2, 1, 3));
+	__m128 result_wyzx = _mm_move_ss(input_wyzx, w);
+	return _mm_shuffle_ps(result_wyzx, result_wyzx, _MM_SHUFFLE(0, 2, 1, 3));
+}
+
 RTM_FORCE_NOINLINE quatf RTM_SIMD_CALL quat_from_positive_w_sse2_and2(vector4f_arg0 input) RTM_NO_EXCEPT
 {
 	const __m128i abs_mask = _mm_set_epi32(0x7FFFFFFFULL, 0x7FFFFFFFULL, 0x7FFFFFFFULL, 0x7FFFFFFFULL);
@@ -114,6 +133,45 @@ RTM_FORCE_NOINLINE quatf RTM_SIMD_CALL quat_from_positive_w_neon(vector4f_arg0 i
 	float w = rtm::scalar_sqrt(rtm::scalar_abs(w_squared));
 	return vsetq_lane_f32(w, input, 3);
 }
+
+// As it turns out, on ARM64, fmov can be used to load certain kind of constants
+// using an immediate value. This works for 1.0 and the float sign bit.
+// See: https://stackoverflow.com/questions/64608307/how-do-i-move-a-floating-point-constant-into-an-fp-register
+RTM_FORCE_NOINLINE quatf RTM_SIMD_CALL quat_from_positive_w_neon_synt(vector4f_arg0 input) RTM_NO_EXCEPT
+{
+	float32x4_t x2y2z2 = vmulq_f32(input, input);
+	float one = vget_lane_f32(vreinterpret_f32_u32(vshr_n_u32(vshl_n_u32(vceq_u32(vreinterpret_u32_f32(vget_low_f32(input)), vreinterpret_u32_f32(vget_low_f32(input))), 25), 2)), 0);
+	float w_squared = ((one - vgetq_lane_f32(x2y2z2, 0)) - vgetq_lane_f32(x2y2z2, 1)) - vgetq_lane_f32(x2y2z2, 2);
+	float w = rtm::scalar_sqrt(rtm::scalar_abs(w_squared));
+	return vsetq_lane_f32(w, input, 3);
+}
+
+#if defined(RTM_IMPL_VFMSS_SUPPORTED)
+RTM_FORCE_NOINLINE quatf RTM_SIMD_CALL quat_from_positive_w_neon_vfmss(vector4f_arg0 input) RTM_NO_EXCEPT
+{
+	// 1.0 - (x * x)
+	float result = vfmss_laneq_f32(1.0F, vgetq_lane_f32(input, 0), input, 0);
+	// result - (y * y)
+	result = vfmss_laneq_f32(result, vgetq_lane_f32(input, 1), input, 1);
+	// result - (z * z)
+	float w_squared = vfmss_laneq_f32(result, vgetq_lane_f32(input, 2), input, 2);
+	float w = scalar_sqrt(scalar_abs(w_squared));
+	return vsetq_lane_f32(w, input, 3);
+}
+
+RTM_FORCE_NOINLINE quatf RTM_SIMD_CALL quat_from_positive_w_neon_synt_vfmss(vector4f_arg0 input) RTM_NO_EXCEPT
+{
+	float one = vget_lane_f32(vreinterpret_f32_u32(vshr_n_u32(vshl_n_u32(vceq_u32(vreinterpret_u32_f32(vget_low_f32(input)), vreinterpret_u32_f32(vget_low_f32(input))), 25), 2)), 0);
+	// 1.0 - (x * x)
+	float result = vfmss_laneq_f32(one, vgetq_lane_f32(input, 0), input, 0);
+	// result - (y * y)
+	result = vfmss_laneq_f32(result, vgetq_lane_f32(input, 1), input, 1);
+	// result - (z * z)
+	float w_squared = vfmss_laneq_f32(result, vgetq_lane_f32(input, 2), input, 2);
+	float w = scalar_sqrt(scalar_abs(w_squared));
+	return vsetq_lane_f32(w, input, 3);
+}
+#endif
 #endif
 
 static void bm_quat_from_positive_w_scalar(benchmark::State& state)
@@ -211,6 +269,29 @@ static void bm_quat_from_positive_w_sse2_and(benchmark::State& state)
 
 BENCHMARK(bm_quat_from_positive_w_sse2_and);
 
+static void bm_quat_from_positive_w_sse2_and_synt(benchmark::State& state)
+{
+	quatf q0 = quat_identity();
+	quatf q1 = quat_identity();
+	quatf q2 = quat_identity();
+	quatf q3 = quat_identity();
+
+	for (auto _ : state)
+	{
+		q0 = quat_from_positive_w_sse2_and_synt(q0);
+		q1 = quat_from_positive_w_sse2_and_synt(q1);
+		q2 = quat_from_positive_w_sse2_and_synt(q2);
+		q3 = quat_from_positive_w_sse2_and_synt(q3);
+	}
+
+	benchmark::DoNotOptimize(q0);
+	benchmark::DoNotOptimize(q1);
+	benchmark::DoNotOptimize(q2);
+	benchmark::DoNotOptimize(q3);
+}
+
+BENCHMARK(bm_quat_from_positive_w_sse2_and_synt);
+
 static void bm_quat_from_positive_w_sse2_and2(benchmark::State& state)
 {
 	quatf q0 = quat_identity();
@@ -258,4 +339,75 @@ static void bm_quat_from_positive_w_neon(benchmark::State& state)
 }
 
 BENCHMARK(bm_quat_from_positive_w_neon);
+
+static void bm_quat_from_positive_w_neon_synt(benchmark::State& state)
+{
+	quatf q0 = quat_identity();
+	quatf q1 = quat_identity();
+	quatf q2 = quat_identity();
+	quatf q3 = quat_identity();
+
+	for (auto _ : state)
+	{
+		q0 = quat_from_positive_w_neon_synt(q0);
+		q1 = quat_from_positive_w_neon_synt(q1);
+		q2 = quat_from_positive_w_neon_synt(q2);
+		q3 = quat_from_positive_w_neon_synt(q3);
+	}
+
+	benchmark::DoNotOptimize(q0);
+	benchmark::DoNotOptimize(q1);
+	benchmark::DoNotOptimize(q2);
+	benchmark::DoNotOptimize(q3);
+}
+
+BENCHMARK(bm_quat_from_positive_w_neon_synt);
+
+#if defined(RTM_IMPL_VFMSS_SUPPORTED)
+static void bm_quat_from_positive_w_neon_vfmss(benchmark::State& state)
+{
+	quatf q0 = quat_identity();
+	quatf q1 = quat_identity();
+	quatf q2 = quat_identity();
+	quatf q3 = quat_identity();
+
+	for (auto _ : state)
+	{
+		q0 = quat_from_positive_w_neon_vfmss(q0);
+		q1 = quat_from_positive_w_neon_vfmss(q1);
+		q2 = quat_from_positive_w_neon_vfmss(q2);
+		q3 = quat_from_positive_w_neon_vfmss(q3);
+	}
+
+	benchmark::DoNotOptimize(q0);
+	benchmark::DoNotOptimize(q1);
+	benchmark::DoNotOptimize(q2);
+	benchmark::DoNotOptimize(q3);
+}
+
+BENCHMARK(bm_quat_from_positive_w_neon_vfmss);
+
+static void bm_quat_from_positive_w_neon_synt_vfmss(benchmark::State& state)
+{
+	quatf q0 = quat_identity();
+	quatf q1 = quat_identity();
+	quatf q2 = quat_identity();
+	quatf q3 = quat_identity();
+
+	for (auto _ : state)
+	{
+		q0 = quat_from_positive_w_neon_synt_vfmss(q0);
+		q1 = quat_from_positive_w_neon_synt_vfmss(q1);
+		q2 = quat_from_positive_w_neon_synt_vfmss(q2);
+		q3 = quat_from_positive_w_neon_synt_vfmss(q3);
+	}
+
+	benchmark::DoNotOptimize(q0);
+	benchmark::DoNotOptimize(q1);
+	benchmark::DoNotOptimize(q2);
+	benchmark::DoNotOptimize(q3);
+}
+
+BENCHMARK(bm_quat_from_positive_w_neon_synt_vfmss);
+#endif
 #endif
