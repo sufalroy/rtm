@@ -34,13 +34,13 @@ namespace rtm
 {
 	RTM_IMPL_VERSION_NAMESPACE_BEGIN
 
-	//////////////////////////////////////////////////////////////////////////
-	// Creates a quaternion from all 4 components.
-	//////////////////////////////////////////////////////////////////////////
+	/// Creates a quaternion from all 4 components.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE quatf RTM_SIMD_CALL quat_set(float x, float y, float z, float w) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		return _mm_set_ps(w, z, y, x);
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_f32x4_make(x, y, z, w);
 #elif defined(RTM_NEON_INTRINSICS)
 		float32x2_t V0 = vset_lane_f32(y, vmov_n_f32(x), 1);
 		float32x2_t V1 = vset_lane_f32(w, vmov_n_f32(z), 1);
@@ -50,13 +50,15 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Creates a quaternion from all 4 components.
-	//////////////////////////////////////////////////////////////////////////
+	/// Creates a quaternion from all 4 components.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE quatd RTM_SIMD_CALL quat_set(double x, double y, double z, double w) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		return quatd{ _mm_set_pd(y, x), _mm_set_pd(w, z) };
+#elif defined(RTM_WASM128_INTRINSICS)
+		return quatd{ wasm_f64x2_make(x, y), wasm_f64x2_make(z, w) };
+#elif defined(RTM_NEON64_INTRINSICS)
+		return quatd{ vcombine_f64(vdup_n_f64(x), vdup_n_f64(y)), vcombine_f64(vdup_n_f64(z), vdup_n_f64(w)) };
 #else
 		return quatd{ x, y, z, w };
 #endif
@@ -64,12 +66,10 @@ namespace rtm
 
 	namespace rtm_impl
 	{
-		//////////////////////////////////////////////////////////////////////////
 		// This is a helper struct to allow a single consistent API between
 		// various quaternion types when the semantics are identical but the return
 		// type differs. Implicit coercion is used to return the desired value
 		// at the call site.
-		//////////////////////////////////////////////////////////////////////////
 		struct quat_identity_impl
 		{
 			RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE RTM_SIMD_CALL operator quatd() const RTM_NO_EXCEPT
@@ -84,9 +84,7 @@ namespace rtm
 		};
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns the identity quaternion.
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns the identity quaternion.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE constexpr rtm_impl::quat_identity_impl RTM_SIMD_CALL quat_identity() RTM_NO_EXCEPT
 	{
 		return rtm_impl::quat_identity_impl();

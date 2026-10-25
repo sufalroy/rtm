@@ -50,7 +50,7 @@ RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_NOINLINE bool RTM_SIMD_CALL mask_all
 	// Assembly for this is 16 bytes with SSE2/AVX: pcmpeqd, pmovmskb, cmp, sete, ret
 	return _mm_movemask_epi8(_mm_cmpeq_epi32(_mm_castps_si128(lhs), _mm_castps_si128(rhs))) == 0xFFFF;
 #elif defined(RTM_NEON_INTRINSICS)
-	uint8x16_t mask = vreinterpretq_u8_u32(vceqq_u32(vreinterpretq_u32_f32(lhs), vreinterpretq_u32_f32(rhs)));
+	uint8x16_t mask = vreinterpretq_u8_u32(vceqq_u32(lhs, rhs));
 	uint8x8x2_t mask_0_8_1_9_2_10_3_11_4_12_5_13_6_14_7_15 = vzip_u8(vget_low_u8(mask), vget_high_u8(mask));
 	uint16x4x2_t mask_0_8_4_12_1_9_5_13_2_10_6_14_3_11_7_15 = vzip_u16(vreinterpret_u16_u8(mask_0_8_1_9_2_10_3_11_4_12_5_13_6_14_7_15.val[0]), vreinterpret_u16_u8(mask_0_8_1_9_2_10_3_11_4_12_5_13_6_14_7_15.val[1]));
 	return vget_lane_u32(vreinterpret_u32_u16(mask_0_8_4_12_1_9_5_13_2_10_6_14_3_11_7_15.val[0]), 0) == 0xFFFFFFFFU;
@@ -78,7 +78,7 @@ RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_NOINLINE bool RTM_SIMD_CALL mask_all
     // cset   w0, eq
     // ret
 
-	uint8x16_t mask = vreinterpretq_u8_u32(veorq_u32(vreinterpretq_u32_f32(lhs), vreinterpretq_u32_f32(rhs)));
+	uint8x16_t mask = vreinterpretq_u8_u32(veorq_u32(lhs, rhs));
 	uint8x8x2_t mask_0_8_1_9_2_10_3_11_4_12_5_13_6_14_7_15 = vzip_u8(vget_low_u8(mask), vget_high_u8(mask));
 	uint16x4x2_t mask_0_8_4_12_1_9_5_13_2_10_6_14_3_11_7_15 = vzip_u16(vreinterpret_u16_u8(mask_0_8_1_9_2_10_3_11_4_12_5_13_6_14_7_15.val[0]), vreinterpret_u16_u8(mask_0_8_1_9_2_10_3_11_4_12_5_13_6_14_7_15.val[1]));
 	return vget_lane_u32(vreinterpret_u32_u16(mask_0_8_4_12_1_9_5_13_2_10_6_14_3_11_7_15.val[0]), 0) == 0;
@@ -98,7 +98,7 @@ RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_NOINLINE bool RTM_SIMD_CALL mask_all
 	// cset   w0, eq
 	// ret
 
-	uint32x4_t mask = veorq_u32(vreinterpretq_u32_f32(lhs), vreinterpretq_u32_f32(rhs));
+	uint32x4_t mask = veorq_u32(lhs, rhs);
 	uint16x4_t truncated_mask = vmovn_u32(mask);
 	return vget_lane_u64(vreinterpret_u64_u16(truncated_mask), 0) == 0;
 }
@@ -119,6 +119,12 @@ static void bm_mask_all_equal_scalar4f(benchmark::State& state)
 
 	for (auto _ : state)
 	{
+		// The inputs do not change: hide them from the compiler, otherwise it can move the calls out of the loop
+		benchmark::DoNotOptimize(m0);
+		benchmark::DoNotOptimize(m1);
+		benchmark::DoNotOptimize(m2);
+		benchmark::DoNotOptimize(m3);
+
 		r0 ^= mask_all_equal_scalar4f(m0, m1);
 		r1 ^= mask_all_equal_scalar4f(m1, m2);
 		r2 ^= mask_all_equal_scalar4f(m2, m3);
@@ -147,6 +153,12 @@ static void bm_mask_all_equal_memcmp4f(benchmark::State& state)
 
 	for (auto _ : state)
 	{
+		// The inputs do not change: hide them from the compiler, otherwise it can move the calls out of the loop
+		benchmark::DoNotOptimize(m0);
+		benchmark::DoNotOptimize(m1);
+		benchmark::DoNotOptimize(m2);
+		benchmark::DoNotOptimize(m3);
+
 		r0 ^= mask_all_equal_memcmp4f(m0, m1);
 		r1 ^= mask_all_equal_memcmp4f(m1, m2);
 		r2 ^= mask_all_equal_memcmp4f(m2, m3);
@@ -176,6 +188,12 @@ static void bm_mask_all_equal_cmp4f(benchmark::State& state)
 
 	for (auto _ : state)
 	{
+		// The inputs do not change: hide them from the compiler, otherwise it can move the calls out of the loop
+		benchmark::DoNotOptimize(m0);
+		benchmark::DoNotOptimize(m1);
+		benchmark::DoNotOptimize(m2);
+		benchmark::DoNotOptimize(m3);
+
 		r0 ^= mask_all_equal_cmp4f(m0, m1);
 		r1 ^= mask_all_equal_cmp4f(m1, m2);
 		r2 ^= mask_all_equal_cmp4f(m2, m3);
@@ -204,6 +222,12 @@ static void bm_mask_all_equal_xor4f(benchmark::State& state)
 
 	for (auto _ : state)
 	{
+		// The inputs do not change: hide them from the compiler, otherwise it can move the calls out of the loop
+		benchmark::DoNotOptimize(m0);
+		benchmark::DoNotOptimize(m1);
+		benchmark::DoNotOptimize(m2);
+		benchmark::DoNotOptimize(m3);
+
 		r0 ^= mask_all_equal_xor4f(m0, m1);
 		r1 ^= mask_all_equal_xor4f(m1, m2);
 		r2 ^= mask_all_equal_xor4f(m2, m3);
@@ -233,6 +257,12 @@ static void bm_mask_all_equal_xor_movn(benchmark::State& state)
 
 	for (auto _ : state)
 	{
+		// The inputs do not change: hide them from the compiler, otherwise it can move the calls out of the loop
+		benchmark::DoNotOptimize(m0);
+		benchmark::DoNotOptimize(m1);
+		benchmark::DoNotOptimize(m2);
+		benchmark::DoNotOptimize(m3);
+
 		r0 ^= mask_all_equal_xor_movn(m0, m1);
 		r1 ^= mask_all_equal_xor_movn(m1, m2);
 		r2 ^= mask_all_equal_xor_movn(m2, m3);

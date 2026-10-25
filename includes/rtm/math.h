@@ -25,35 +25,36 @@
 // SOFTWARE.
 ////////////////////////////////////////////////////////////////////////////////
 
+#include "rtm/config.h"
 #include "rtm/impl/detect_arch.h"
 #include "rtm/impl/detect_compiler.h"
 
-//////////////////////////////////////////////////////////////////////////
 // Detect which intrinsics the current compilation environment supports.
-//////////////////////////////////////////////////////////////////////////
 
 #if !defined(RTM_NO_INTRINSICS)
-	#if defined(__AVX2__)
-		#define RTM_AVX2_INTRINSICS
-		#define RTM_FMA_INTRINSICS
-		#define RTM_AVX_INTRINSICS
-		#define RTM_SSE4_INTRINSICS
-		#define RTM_SSE3_INTRINSICS
-		#define RTM_SSE2_INTRINSICS
-	#elif defined(__AVX__)
-		#define RTM_AVX_INTRINSICS
-		#define RTM_SSE4_INTRINSICS
-		#define RTM_SSE3_INTRINSICS
-		#define RTM_SSE2_INTRINSICS
-	#elif defined(__SSE4_1__)
-		#define RTM_SSE4_INTRINSICS
-		#define RTM_SSE3_INTRINSICS
-		#define RTM_SSE2_INTRINSICS
-	#elif defined(__SSSE3__)
-		#define RTM_SSE3_INTRINSICS
-		#define RTM_SSE2_INTRINSICS
-	#elif defined(__SSE2__) || defined(RTM_ARCH_X86) || defined(RTM_ARCH_X64)
-		#define RTM_SSE2_INTRINSICS
+	#if defined(RTM_ARCH_X86) || defined(RTM_ARCH_X64)
+		#if defined(__AVX2__)
+			#define RTM_AVX2_INTRINSICS
+			#define RTM_FMA_INTRINSICS
+			#define RTM_AVX_INTRINSICS
+			#define RTM_SSE4_INTRINSICS
+			#define RTM_SSE3_INTRINSICS
+			#define RTM_SSE2_INTRINSICS
+		#elif defined(__AVX__)
+			#define RTM_AVX_INTRINSICS
+			#define RTM_SSE4_INTRINSICS
+			#define RTM_SSE3_INTRINSICS
+			#define RTM_SSE2_INTRINSICS
+		#elif defined(__SSE4_1__)
+			#define RTM_SSE4_INTRINSICS
+			#define RTM_SSE3_INTRINSICS
+			#define RTM_SSE2_INTRINSICS
+		#elif defined(__SSSE3__)
+			#define RTM_SSE3_INTRINSICS
+			#define RTM_SSE2_INTRINSICS
+		#else
+			#define RTM_SSE2_INTRINSICS
+		#endif
 	#endif
 
 	#if defined(RTM_ARCH_ARM64)
@@ -63,8 +64,13 @@
 		#define RTM_NEON_INTRINSICS
 	#endif
 
-	// If SSE2 and NEON aren't used, we default to the scalar implementation
-	#if !defined(RTM_SSE2_INTRINSICS) && !defined(RTM_NEON_INTRINSICS)
+	// Clang defines __wasm_simd128__ when we compile with -msimd128
+	#if defined(RTM_ARCH_WASM) && defined(__wasm_simd128__)
+		#define RTM_WASM128_INTRINSICS
+	#endif
+
+	// If SSE2, NEON, and WASM SIMD aren't used, we default to the scalar implementation
+	#if !defined(RTM_SSE2_INTRINSICS) && !defined(RTM_NEON_INTRINSICS) && !defined(RTM_WASM128_INTRINSICS)
 		#define RTM_NO_INTRINSICS
 	#endif
 #endif
@@ -79,11 +85,16 @@
 		#if RTM_COMPILER_MSVC >= RTM_COMPILER_MSVC_2015
 			#define RTM_USE_VECTORCALL
 		#endif
+	// With Clang on windows, we can use __vectorcall as well
+	// Otherwise __m128 arguments are passed by reference which is terrible for performance
+	#elif defined(_MSC_VER) && defined(__clang__) && !defined(RTM_SIMD_CALL)
+		#define RTM_USE_VECTORCALL
 	#endif
 #endif
 
 #if defined(RTM_SSE3_INTRINSICS)
 	#include <pmmintrin.h>
+	#include <tmmintrin.h>
 #endif
 
 #if defined(RTM_SSE4_INTRINSICS)
@@ -101,7 +112,11 @@
 	#include <arm_neon.h>
 #endif
 
-// Specify the SIMD calling convention is we can
+#if defined(RTM_WASM128_INTRINSICS)
+	#include <wasm_simd128.h>
+#endif
+
+// Specify the SIMD calling convention if we can
 #if !defined(RTM_SIMD_CALL)
 	#if defined(RTM_USE_VECTORCALL)
 		#define RTM_SIMD_CALL __vectorcall

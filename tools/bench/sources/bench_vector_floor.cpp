@@ -30,10 +30,10 @@ using namespace rtm;
 
 RTM_FORCE_NOINLINE vector4f RTM_SIMD_CALL vector_floor_scalar(vector4f_arg0 input) RTM_NO_EXCEPT
 {
-	scalarf x = vector_get_x(input);
-	scalarf y = vector_get_y(input);
-	scalarf z = vector_get_z(input);
-	scalarf w = vector_get_w(input);
+	scalarf x = vector_get_x_as_scalar(input);
+	scalarf y = vector_get_y_as_scalar(input);
+	scalarf z = vector_get_z_as_scalar(input);
+	scalarf w = vector_get_w_as_scalar(input);
 	return vector_set(scalar_floor(x), scalar_floor(y), scalar_floor(z), scalar_floor(w));
 }
 
@@ -101,7 +101,7 @@ RTM_FORCE_NOINLINE vector4f RTM_SIMD_CALL vector_floor_neon(vector4f_arg0 input)
 	// A negative input will round towards zero and be greater when we need it to be smaller.
 	uint32x4_t is_negative = vcgtq_f32(integer_part, input);
 
-	float32x4_t bias = vcvtq_f32_s32(is_negative);
+	float32x4_t bias = vcvtq_f32_s32(vreinterpretq_s32_u32(is_negative));
 
 	// Add our bias to properly handle negative values
 	integer_part = vaddq_f32(integer_part, bias);
@@ -133,7 +133,7 @@ RTM_FORCE_NOINLINE vector4f RTM_SIMD_CALL vector_floor_neon_abs_cmp(vector4f_arg
 	// A negative input will round towards zero and be greater when we need it to be smaller.
 	uint32x4_t is_negative = vcgtq_f32(integer_part, input);
 
-	float32x4_t bias = vcvtq_f32_s32(is_negative);
+	float32x4_t bias = vcvtq_f32_s32(vreinterpretq_s32_u32(is_negative));
 
 	// Add our bias to properly handle negative values
 	integer_part = vaddq_f32(integer_part, bias);

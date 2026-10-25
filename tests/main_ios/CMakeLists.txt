@@ -1,8 +1,7 @@
-cmake_minimum_required (VERSION 3.2)
 project(rtm_unit_tests)
 
 # iOS cmake toolchain does not support CMAKE_CXX_STANDARD
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++${CMAKE_CXX_STANDARD}")
 
 # Force enable debug symbols
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g")
@@ -17,11 +16,19 @@ set(MACOSX_BUNDLE_BUNDLE_NAME "rtm-unit-tests")
 
 include_directories("${PROJECT_SOURCE_DIR}/../../includes")
 include_directories("${PROJECT_SOURCE_DIR}/../../external/catch2/single_include")
+include_directories("${PROJECT_SOURCE_DIR}/../sources")
 
 # Grab all of our test source files
 file(GLOB_RECURSE ALL_TEST_SOURCE_FILES LIST_DIRECTORIES false
 	${PROJECT_SOURCE_DIR}/../sources/*.h
 	${PROJECT_SOURCE_DIR}/../sources/*.cpp)
+
+if(NOT WITH_VECTOR_MIX_TESTS)
+	# The vector_mix unit tests are slow to compile, do not compile them when they are disabled
+	file(GLOB VECTOR_MIX_SOURCE_FILES LIST_DIRECTORIES false
+		${PROJECT_SOURCE_DIR}/../sources/vector_mix/*.cpp)
+	list(REMOVE_ITEM ALL_TEST_SOURCE_FILES ${VECTOR_MIX_SOURCE_FILES})
+endif()
 
 create_source_groups("${ALL_TEST_SOURCE_FILES}" ${PROJECT_SOURCE_DIR}/..)
 
@@ -45,3 +52,6 @@ if(WITH_VECTOR_MIX_TESTS)
 	# Enable vector_mix unit tests
 	add_definitions(-DRTM_IMPL_WITH_VECTOR_MIX_TESTS)
 endif()
+
+# Set XCode properties
+set_property(TARGET ${PROJECT_NAME} PROPERTY XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.rtm.rtm-unit-tests")

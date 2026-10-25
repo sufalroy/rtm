@@ -1,4 +1,3 @@
-cmake_minimum_required (VERSION 3.2)
 project(rtm_bench)
 
 # Google Benchmark
@@ -6,7 +5,7 @@ set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "No need to run benchmark's tests" F
 add_subdirectory("${PROJECT_SOURCE_DIR}/../../../external/benchmark" google_benchmark)
 
 # iOS cmake toolchain does not support CMAKE_CXX_STANDARD
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++${CMAKE_CXX_STANDARD}")
 
 # Force enable debug symbols
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g")
@@ -43,3 +42,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE benchmark)    # Link Google Benchm
 if(NOT USE_SIMD_INSTRUCTIONS)
 	add_definitions(-DRTM_NO_INTRINSICS)
 endif()
+
+# Set XCode properties
+set_property(TARGET ${PROJECT_NAME} PROPERTY XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.rtm.rtm-bench")

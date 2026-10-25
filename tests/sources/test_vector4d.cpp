@@ -23,6 +23,13 @@
 // SOFTWARE.
 ////////////////////////////////////////////////////////////////////////////////
 
+#include "catch2.impl.h"
+
+#include <rtm/scalard.h>
+#include <rtm/vector4d.h>
+#include <rtm/quatd.h>
+#include <rtm/mask4d.h>
+
 #include "test_vector4_impl.h"
 
 TEST_CASE("vector4d math get/set", "[math][vector4]")
@@ -48,22 +55,14 @@ TEST_CASE("vector4d math logical", "[math][vector4]")
 TEST_CASE("vector4d math misc", "[math][vector4]")
 {
 	test_vector4_impl<double>(1.0E-9);
+}
 
-	const vector4d src = vector_set(-2.65, 2.996113, 0.68123521, -5.9182);
-	const vector4f dst = vector_cast(src);
-	CHECK(scalar_near_equal(vector_get_x(dst), -2.65F, 1.0E-6F));
-	CHECK(scalar_near_equal(vector_get_y(dst), 2.996113F, 1.0E-6F));
-	CHECK(scalar_near_equal(vector_get_z(dst), 0.68123521F, 1.0E-6F));
-	CHECK(scalar_near_equal(vector_get_w(dst), -5.9182F, 1.0E-6F));
+TEST_CASE("vector4d math mix zero", "[math][vector4]")
+{
+	test_vector4_mix_zero_impl<double>();
+}
 
-	const vector4d large_values = vector_set(36028797018963968.5, 36028797018963968.5, -36028797018963968.5, -36028797018963968.5);
-	CHECK(double(vector_get_x(vector_floor(large_values))) == scalar_floor(double(vector_get_x(large_values))));
-	CHECK(double(vector_get_y(vector_floor(large_values))) == scalar_floor(double(vector_get_y(large_values))));
-	CHECK(double(vector_get_z(vector_floor(large_values))) == scalar_floor(double(vector_get_z(large_values))));
-	CHECK(double(vector_get_w(vector_floor(large_values))) == scalar_floor(double(vector_get_w(large_values))));
-
-	CHECK(double(vector_get_x(vector_ceil(large_values))) == scalar_ceil(double(vector_get_x(large_values))));
-	CHECK(double(vector_get_y(vector_ceil(large_values))) == scalar_ceil(double(vector_get_y(large_values))));
-	CHECK(double(vector_get_z(vector_ceil(large_values))) == scalar_ceil(double(vector_get_z(large_values))));
-	CHECK(double(vector_get_w(vector_ceil(large_values))) == scalar_ceil(double(vector_get_w(large_values))));
+TEST_CASE("vector4d math exp/log", "[math][vector4]")
+{
+	test_vector4_exp_log_impl<double>(1.0E-12);
 }

@@ -22,6 +22,8 @@
 // SOFTWARE.
 ////////////////////////////////////////////////////////////////////////////////
 
+#include <rtm/vector4d.h>
+
 #include "test_vector4_mix_impl.h"
 
 TEST_CASE("vector4d vector_mix<d b * *>", "[math][vector4]")

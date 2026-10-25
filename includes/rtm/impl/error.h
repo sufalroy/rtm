@@ -25,45 +25,15 @@
 // SOFTWARE.
 ////////////////////////////////////////////////////////////////////////////////
 
+#include "rtm/config.h"
 #include "rtm/version.h"
 #include "rtm/impl/compiler_utils.h"
+#include "rtm/impl/detect_compiler.h"
+#include "rtm/impl/detect_cpp_version.h"
 
 RTM_IMPL_FILE_PRAGMA_PUSH
 
-//////////////////////////////////////////////////////////////////////////
-// This library uses a simple system to handle asserts. Asserts are fatal and must terminate
-// otherwise the behavior is undefined if execution continues.
-//
-// A total of 4 behaviors are supported:
-//    - We can print to stderr and abort
-//    - We can throw and exception
-//    - We can call a custom function
-//    - Do nothing and strip the check at compile time (default behavior)
-//
-// Aborting:
-//    In order to enable the aborting behavior, simply define the macro RTM_ON_ASSERT_ABORT:
-//    #define RTM_ON_ASSERT_ABORT
-//
-// Throwing:
-//    In order to enable the throwing behavior, simply define the macro RTM_ON_ASSERT_THROW:
-//    #define RTM_ON_ASSERT_THROW
-//    Note that the type of the exception thrown is rtm::runtime_assert.
-//
-// Custom function:
-//    In order to enable the custom function calling behavior, define the macro RTM_ON_ASSERT_CUSTOM
-//    with the name of the function to call:
-//    #define RTM_ON_ASSERT_CUSTOM on_custom_assert_impl
-//    Note that the function signature is as follow:
-//    void on_custom_assert_impl(const char* expression, int line, const char* file, const char* format, ...) {}
-//
-//    You can also define your own assert implementation by defining the RTM_ASSERT macro as well:
-//    #define RTM_ON_ASSERT_CUSTOM
-//    #define RTM_ASSERT(expression, format, ...) checkf(expression, ANSI_TO_TCHAR(format), #__VA_ARGS__)
-//
-// No checks:
-//    By default if no macro mentioned above is defined, all asserts will be stripped
-//    at compile time.
-//////////////////////////////////////////////////////////////////////////
+// See config.h for details on how to configure asserts for your project
 
 #if defined(RTM_ON_ASSERT_ABORT)
 
@@ -77,7 +47,7 @@ RTM_IMPL_FILE_PRAGMA_PUSH
 
 		namespace rtm_impl
 		{
-			RTM_DISABLE_SECURITY_COOKIE_CHECK inline void on_assert_abort(const char* expression, int line, const char* file, const char* format, ...)
+			[[noreturn]] RTM_DISABLE_SECURITY_COOKIE_CHECK inline void on_assert_abort(const char* expression, int line, const char* file, const char* format, ...)
 			{
 				(void)expression;
 				(void)line;
@@ -115,12 +85,14 @@ RTM_IMPL_FILE_PRAGMA_PUSH
 
 		class runtime_assert final : public std::runtime_error
 		{
+			runtime_assert() = delete;					// Default constructor not needed
+
 			using std::runtime_error::runtime_error;	// Inherit constructors
 		};
 
 		namespace rtm_impl
 		{
-			RTM_DISABLE_SECURITY_COOKIE_CHECK inline void on_assert_throw(const char* expression, int line, const char* file, const char* format, ...)
+			[[noreturn]] RTM_DISABLE_SECURITY_COOKIE_CHECK inline void on_assert_throw(const char* expression, int line, const char* file, const char* format, ...)
 			{
 				(void)expression;
 				(void)line;
@@ -137,7 +109,7 @@ RTM_IMPL_FILE_PRAGMA_PUSH
 				va_end(args);
 
 				if (count >= 0 && count < buffer_size)
-					throw runtime_assert(std::string(&buffer[0], count));
+					throw runtime_assert(std::string(&buffer[0], static_cast<std::string::size_type>(count)));
 				else
 					throw runtime_assert("Failed to format assert message!\n");
 			}
@@ -166,24 +138,28 @@ RTM_IMPL_FILE_PRAGMA_PUSH
 
 #endif
 
-//////////////////////////////////////////////////////////////////////////
 // Deprecation support
-//////////////////////////////////////////////////////////////////////////
 
-#if defined(__has_cpp_attribute) && __cplusplus >= 201402L
-	#if __has_cpp_attribute(deprecated)
-		#define RTM_DEPRECATED(msg) [[deprecated(msg)]]
+// Use RTM_NO_DEPRECATION to disable all deprecation warnings
+#if !defined(RTM_NO_DEPRECATION)
+	#if defined(__has_cpp_attribute) && RTM_CPP_VERSION >= RTM_CPP_VERSION_14
+		#if __has_cpp_attribute(deprecated)
+			#define RTM_DEPRECATED(msg) [[deprecated(msg)]]
+		#endif
+	#endif
+
+	#if !defined(RTM_DEPRECATED)
+		#if defined(RTM_COMPILER_GCC) || defined(RTM_COMPILER_CLANG)
+			#define RTM_DEPRECATED(msg) __attribute__((deprecated))
+		#elif defined(RTM_COMPILER_MSVC)
+			#define RTM_DEPRECATED(msg) __declspec(deprecated)
+		#endif
 	#endif
 #endif
 
+// If not defined, suppress all deprecation warnings
 #if !defined(RTM_DEPRECATED)
-	#if defined(RTM_COMPILER_GCC) || defined(RTM_COMPILER_CLANG)
-		#define RTM_DEPRECATED(msg) __attribute__((deprecated))
-	#elif defined(RTM_COMPILER_MSVC)
-		#define RTM_DEPRECATED(msg) __declspec(deprecated)
-	#else
-		#define RTM_DEPRECATED(msg)
-	#endif
+	#define RTM_DEPRECATED(msg)
 #endif
 
 RTM_IMPL_FILE_PRAGMA_POP

@@ -30,10 +30,10 @@ using namespace rtm;
 
 RTM_FORCE_NOINLINE vector4f RTM_SIMD_CALL vector_ceil_scalar(vector4f_arg0 input) RTM_NO_EXCEPT
 {
-	scalarf x = vector_get_x(input);
-	scalarf y = vector_get_y(input);
-	scalarf z = vector_get_z(input);
-	scalarf w = vector_get_w(input);
+	scalarf x = vector_get_x_as_scalar(input);
+	scalarf y = vector_get_y_as_scalar(input);
+	scalarf z = vector_get_z_as_scalar(input);
+	scalarf w = vector_get_w_as_scalar(input);
 	return vector_set(scalar_ceil(x), scalar_ceil(y), scalar_ceil(z), scalar_ceil(w));
 }
 
@@ -100,7 +100,7 @@ RTM_FORCE_NOINLINE vector4f RTM_SIMD_CALL vector_ceil_neon(vector4f_arg0 input) 
 	// A positive input will round towards zero and be lower when we need it to be greater.
 	uint32x4_t is_positive = vcltq_f32(integer_part, input);
 
-	float32x4_t bias = vcvtq_f32_s32(is_positive);
+	float32x4_t bias = vcvtq_f32_s32(vreinterpretq_s32_u32(is_positive));
 
 	// Subtract our bias to properly handle positive values
 	integer_part = vsubq_f32(integer_part, bias);

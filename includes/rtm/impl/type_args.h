@@ -26,444 +26,64 @@
 
 #include "rtm/types.h"
 #include "rtm/version.h"
+#include "rtm/impl/compiler_utils.h"
+#include "rtm/impl/error.h"
+
+// Register passing typedefs
+
+#if defined(RTM_USE_VECTORCALL)
+	#include "rtm/impl/type_args.vectorcall.impl.h"
+#elif defined(RTM_NEON64_INTRINSICS)
+	#include "rtm/impl/type_args.neon64.impl.h"
+#elif defined(RTM_NEON_INTRINSICS)
+	#include "rtm/impl/type_args.neon.impl.h"
+#elif defined(RTM_WASM128_INTRINSICS)
+	#include "rtm/impl/type_args.wasm.impl.h"
+#elif defined(RTM_ARCH_X64) && defined(RTM_COMPILER_GCC)
+	#include "rtm/impl/type_args.x64_gcc.impl.h"
+#elif defined(RTM_ARCH_X64) && defined(RTM_COMPILER_CLANG)
+	#include "rtm/impl/type_args.x64_clang.impl.h"
+#else
+	#include "rtm/impl/type_args.other.impl.h"
+#endif
+
+RTM_IMPL_FILE_PRAGMA_PUSH
 
 namespace rtm
 {
 	RTM_IMPL_VERSION_NAMESPACE_BEGIN
 
-	//////////////////////////////////////////////////////////////////////////
-	// Register passing typedefs
-	//////////////////////////////////////////////////////////////////////////
+	// The previous names of the vqf_arg0, vqf_arg1, and vqf_argn types.
+	using qvf_arg0 RTM_DEPRECATED("Use 'vqf_arg0' instead. To be removed in 2.5.") = vqf_arg0;
+	using qvf_arg1 RTM_DEPRECATED("Use 'vqf_arg1' instead. To be removed in 2.5.") = vqf_arg1;
+	using qvf_argn RTM_DEPRECATED("Use 'vqf_argn' instead. To be removed in 2.5.") = vqf_argn;
 
-#if defined(RTM_USE_VECTORCALL)
-	// On x64 with __vectorcall, the first 6x vector4f/quatf arguments can be passed by value in a register,
-	// everything else afterwards is passed by const&. They can also be returned by register.
-	using vector4f_arg0 = const vector4f;
-	using vector4f_arg1 = const vector4f;
-	using vector4f_arg2 = const vector4f;
-	using vector4f_arg3 = const vector4f;
-	using vector4f_arg4 = const vector4f;
-	using vector4f_arg5 = const vector4f;
-	using vector4f_arg6 = const vector4f&;
-	using vector4f_arg7 = const vector4f&;
-	using vector4f_argn = const vector4f&;
+	// The previous names of the vqd_arg0, vqd_arg1, and vqd_argn types.
+	using qvd_arg0 RTM_DEPRECATED("Use 'vqd_arg0' instead. To be removed in 2.5.") = vqd_arg0;
+	using qvd_arg1 RTM_DEPRECATED("Use 'vqd_arg1' instead. To be removed in 2.5.") = vqd_arg1;
+	using qvd_argn RTM_DEPRECATED("Use 'vqd_argn' instead. To be removed in 2.5.") = vqd_argn;
 
-	using quatf_arg0 = const quatf;
-	using quatf_arg1 = const quatf;
-	using quatf_arg2 = const quatf;
-	using quatf_arg3 = const quatf;
-	using quatf_arg4 = const quatf;
-	using quatf_arg5 = const quatf;
-	using quatf_arg6 = const quatf&;
-	using quatf_arg7 = const quatf&;
-	using quatf_argn = const quatf&;
+	// The previous names of the vqsf_arg0, vqsf_arg1, and vqsf_argn types.
+	using qvsf_arg0 RTM_DEPRECATED("Use 'vqsf_arg0' instead. To be removed in 2.5.") = vqsf_arg0;
+	using qvsf_arg1 RTM_DEPRECATED("Use 'vqsf_arg1' instead. To be removed in 2.5.") = vqsf_arg1;
+	using qvsf_argn RTM_DEPRECATED("Use 'vqsf_argn' instead. To be removed in 2.5.") = vqsf_argn;
 
-	using scalarf_arg0 = const scalarf;
-	using scalarf_arg1 = const scalarf;
-	using scalarf_arg2 = const scalarf;
-	using scalarf_arg3 = const scalarf;
-	using scalarf_arg4 = const scalarf;
-	using scalarf_arg5 = const scalarf;
-	using scalarf_arg6 = const scalarf&;
-	using scalarf_arg7 = const scalarf&;
-	using scalarf_argn = const scalarf&;
+	// The previous names of the vqsd_arg0, vqsd_arg1, and vqsd_argn types.
+	using qvsd_arg0 RTM_DEPRECATED("Use 'vqsd_arg0' instead. To be removed in 2.5.") = vqsd_arg0;
+	using qvsd_arg1 RTM_DEPRECATED("Use 'vqsd_arg1' instead. To be removed in 2.5.") = vqsd_arg1;
+	using qvsd_argn RTM_DEPRECATED("Use 'vqsd_argn' instead. To be removed in 2.5.") = vqsd_argn;
 
-	using mask4f_arg0 = const mask4f;
-	using mask4f_arg1 = const mask4f;
-	using mask4f_arg2 = const mask4f;
-	using mask4f_arg3 = const mask4f;
-	using mask4f_arg4 = const mask4f;
-	using mask4f_arg5 = const mask4f;
-	using mask4f_arg6 = const mask4f&;
-	using mask4f_arg7 = const mask4f&;
-	using mask4f_argn = const mask4f&;
+	// The previous names of the vqvf_arg0, vqvf_arg1, and vqvf_argn types.
+	using qvvf_arg0 RTM_DEPRECATED("Use 'vqvf_arg0' instead. To be removed in 2.5.") = vqvf_arg0;
+	using qvvf_arg1 RTM_DEPRECATED("Use 'vqvf_arg1' instead. To be removed in 2.5.") = vqvf_arg1;
+	using qvvf_argn RTM_DEPRECATED("Use 'vqvf_argn' instead. To be removed in 2.5.") = vqvf_argn;
 
-	using mask4i_arg0 = const mask4i;
-	using mask4i_arg1 = const mask4i;
-	using mask4i_arg2 = const mask4i;
-	using mask4i_arg3 = const mask4i;
-	using mask4i_arg4 = const mask4i;
-	using mask4i_arg5 = const mask4i;
-	using mask4i_arg6 = const mask4i&;
-	using mask4i_arg7 = const mask4i&;
-	using mask4i_argn = const mask4i&;
-
-	// With __vectorcall, vector aggregates are also passed by register and they can use up to 4 registers.
-
-	using qvvf_arg0 = const qvvf;
-	using qvvf_arg1 = const qvvf;
-	using qvvf_argn = const qvvf&;
-
-	using matrix3x3f_arg0 = const matrix3x3f;
-	using matrix3x3f_arg1 = const matrix3x3f&;
-	using matrix3x3f_argn = const matrix3x3f&;
-
-	using matrix3x4f_arg0 = const matrix3x4f;
-	using matrix3x4f_arg1 = const matrix3x4f&;
-	using matrix3x4f_argn = const matrix3x4f&;
-
-	using matrix4x4f_arg0 = const matrix4x4f;
-	using matrix4x4f_arg1 = const matrix4x4f&;
-	using matrix4x4f_argn = const matrix4x4f&;
-#elif defined(RTM_NEON64_INTRINSICS)
-	// On ARM64 NEON, the first 8x vector4f/quatf arguments can be passed by value in a register,
-	// everything else afterwards is passed by const&. They can also be returned by register.
-
-	using vector4f_arg0 = const vector4f;
-	using vector4f_arg1 = const vector4f;
-	using vector4f_arg2 = const vector4f;
-	using vector4f_arg3 = const vector4f;
-	using vector4f_arg4 = const vector4f;
-	using vector4f_arg5 = const vector4f;
-	using vector4f_arg6 = const vector4f;
-	using vector4f_arg7 = const vector4f;
-	using vector4f_argn = const vector4f&;
-
-	using quatf_arg0 = const quatf;
-	using quatf_arg1 = const quatf;
-	using quatf_arg2 = const quatf;
-	using quatf_arg3 = const quatf;
-	using quatf_arg4 = const quatf;
-	using quatf_arg5 = const quatf;
-	using quatf_arg6 = const quatf;
-	using quatf_arg7 = const quatf;
-	using quatf_argn = const quatf&;
-
-	using scalarf_arg0 = const scalarf;
-	using scalarf_arg1 = const scalarf;
-	using scalarf_arg2 = const scalarf;
-	using scalarf_arg3 = const scalarf;
-	using scalarf_arg4 = const scalarf;
-	using scalarf_arg5 = const scalarf;
-	using scalarf_arg6 = const scalarf;
-	using scalarf_arg7 = const scalarf;
-	using scalarf_argn = const scalarf;
-
-	using mask4f_arg0 = const mask4f;
-	using mask4f_arg1 = const mask4f;
-	using mask4f_arg2 = const mask4f;
-	using mask4f_arg3 = const mask4f;
-	using mask4f_arg4 = const mask4f;
-	using mask4f_arg5 = const mask4f;
-	using mask4f_arg6 = const mask4f;
-	using mask4f_arg7 = const mask4f;
-	using mask4f_argn = const mask4f&;
-
-	using mask4i_arg0 = const mask4i;
-	using mask4i_arg1 = const mask4i;
-	using mask4i_arg2 = const mask4i;
-	using mask4i_arg3 = const mask4i;
-	using mask4i_arg4 = const mask4i;
-	using mask4i_arg5 = const mask4i;
-	using mask4i_arg6 = const mask4i;
-	using mask4i_arg7 = const mask4i;
-	using mask4i_argn = const mask4i&;
-
-	// With ARM64 NEON, vector aggregates are also passed by register but the whole aggregate
-	// must fit in the number of registers available (e.g. we can pass 2x qvvf but not 3x).
-	// A qvvf can also be returned by register.
-
-	using qvvf_arg0 = const qvvf;
-	using qvvf_arg1 = const qvvf;
-	using qvvf_argn = const qvvf&;
-
-	using matrix3x3f_arg0 = const matrix3x3f;
-	using matrix3x3f_arg1 = const matrix3x3f;
-	using matrix3x3f_argn = const matrix3x3f&;
-
-	using matrix3x4f_arg0 = const matrix3x4f;
-	using matrix3x4f_arg1 = const matrix3x4f;
-	using matrix3x4f_argn = const matrix3x4f&;
-
-	using matrix4x4f_arg0 = const matrix4x4f;
-	using matrix4x4f_arg1 = const matrix4x4f;
-	using matrix4x4f_argn = const matrix4x4f&;
-#elif defined(RTM_NEON_INTRINSICS)
-	// On ARM NEON, the first 4x vector4f/quatf arguments can be passed by value in a register,
-	// everything else afterwards is passed by const&. They can also be returned by register.
-
-	using vector4f_arg0 = const vector4f;
-	using vector4f_arg1 = const vector4f;
-	using vector4f_arg2 = const vector4f;
-	using vector4f_arg3 = const vector4f;
-	using vector4f_arg4 = const vector4f&;
-	using vector4f_arg5 = const vector4f&;
-	using vector4f_arg6 = const vector4f&;
-	using vector4f_arg7 = const vector4f&;
-	using vector4f_argn = const vector4f&;
-
-	using quatf_arg0 = const quatf;
-	using quatf_arg1 = const quatf;
-	using quatf_arg2 = const quatf;
-	using quatf_arg3 = const quatf;
-	using quatf_arg4 = const quatf&;
-	using quatf_arg5 = const quatf&;
-	using quatf_arg6 = const quatf&;
-	using quatf_arg7 = const quatf&;
-	using quatf_argn = const quatf&;
-
-	using scalarf_arg0 = const scalarf;
-	using scalarf_arg1 = const scalarf;
-	using scalarf_arg2 = const scalarf;
-	using scalarf_arg3 = const scalarf;
-	using scalarf_arg4 = const scalarf;
-	using scalarf_arg5 = const scalarf;
-	using scalarf_arg6 = const scalarf;
-	using scalarf_arg7 = const scalarf;
-	using scalarf_argn = const scalarf;
-
-	using mask4f_arg0 = const mask4f;
-	using mask4f_arg1 = const mask4f;
-	using mask4f_arg2 = const mask4f;
-	using mask4f_arg3 = const mask4f;
-	using mask4f_arg4 = const mask4f&;
-	using mask4f_arg5 = const mask4f&;
-	using mask4f_arg6 = const mask4f&;
-	using mask4f_arg7 = const mask4f&;
-	using mask4f_argn = const mask4f&;
-
-	using mask4i_arg0 = const mask4i;
-	using mask4i_arg1 = const mask4i;
-	using mask4i_arg2 = const mask4i;
-	using mask4i_arg3 = const mask4i;
-	using mask4i_arg4 = const mask4i&;
-	using mask4i_arg5 = const mask4i&;
-	using mask4i_arg6 = const mask4i&;
-	using mask4i_arg7 = const mask4i&;
-	using mask4i_argn = const mask4i&;
-
-	// ARM NEON does not support passing aggregates by register.
-
-	using qvvf_arg0 = const qvvf&;
-	using qvvf_arg1 = const qvvf&;
-	using qvvf_argn = const qvvf&;
-
-	using matrix3x3f_arg0 = const matrix3x3f&;
-	using matrix3x3f_arg1 = const matrix3x3f&;
-	using matrix3x3f_argn = const matrix3x3f&;
-
-	using matrix3x4f_arg0 = const matrix3x4f&;
-	using matrix3x4f_arg1 = const matrix3x4f&;
-	using matrix3x4f_argn = const matrix3x4f&;
-
-	using matrix4x4f_arg0 = const matrix4x4f&;
-	using matrix4x4f_arg1 = const matrix4x4f&;
-	using matrix4x4f_argn = const matrix4x4f&;
-#elif defined(RTM_ARCH_X64) && defined(RTM_COMPILER_GCC)
-	// On x64 with gcc, the first 8x vector4f/quatf arguments can be passed by value in a register,
-	// everything else afterwards is passed by const&. They can also be returned by register.
-
-	using vector4f_arg0 = const vector4f;
-	using vector4f_arg1 = const vector4f;
-	using vector4f_arg2 = const vector4f;
-	using vector4f_arg3 = const vector4f;
-	using vector4f_arg4 = const vector4f;
-	using vector4f_arg5 = const vector4f;
-	using vector4f_arg6 = const vector4f;
-	using vector4f_arg7 = const vector4f;
-	using vector4f_argn = const vector4f&;
-
-	using quatf_arg0 = const quatf;
-	using quatf_arg1 = const quatf;
-	using quatf_arg2 = const quatf;
-	using quatf_arg3 = const quatf;
-	using quatf_arg4 = const quatf;
-	using quatf_arg5 = const quatf;
-	using quatf_arg6 = const quatf;
-	using quatf_arg7 = const quatf;
-	using quatf_argn = const quatf&;
-
-	using scalarf_arg0 = const scalarf;
-	using scalarf_arg1 = const scalarf;
-	using scalarf_arg2 = const scalarf;
-	using scalarf_arg3 = const scalarf;
-	using scalarf_arg4 = const scalarf;
-	using scalarf_arg5 = const scalarf;
-	using scalarf_arg6 = const scalarf;
-	using scalarf_arg7 = const scalarf;
-	using scalarf_argn = const scalarf&;
-
-	using mask4f_arg0 = const mask4f;
-	using mask4f_arg1 = const mask4f;
-	using mask4f_arg2 = const mask4f;
-	using mask4f_arg3 = const mask4f;
-	using mask4f_arg4 = const mask4f;
-	using mask4f_arg5 = const mask4f;
-	using mask4f_arg6 = const mask4f;
-	using mask4f_arg7 = const mask4f;
-	using mask4f_argn = const mask4f&;
-
-	using mask4i_arg0 = const mask4i;
-	using mask4i_arg1 = const mask4i;
-	using mask4i_arg2 = const mask4i;
-	using mask4i_arg3 = const mask4i;
-	using mask4i_arg4 = const mask4i;
-	using mask4i_arg5 = const mask4i;
-	using mask4i_arg6 = const mask4i;
-	using mask4i_arg7 = const mask4i;
-	using mask4i_argn = const mask4i&;
-
-	// gcc does not appear to support passing and returning aggregates by register
-
-	using qvvf_arg0 = const qvvf&;
-	using qvvf_arg1 = const qvvf&;
-	using qvvf_argn = const qvvf&;
-
-	using matrix3x3f_arg0 = const matrix3x3f&;
-	using matrix3x3f_arg1 = const matrix3x3f&;
-	using matrix3x3f_argn = const matrix3x3f&;
-
-	using matrix3x4f_arg0 = const matrix3x4f&;
-	using matrix3x4f_arg1 = const matrix3x4f&;
-	using matrix3x4f_argn = const matrix3x4f&;
-
-	using matrix4x4f_arg0 = const matrix4x4f&;
-	using matrix4x4f_arg1 = const matrix4x4f&;
-	using matrix4x4f_argn = const matrix4x4f&;
-#elif defined(RTM_ARCH_X64) && defined(RTM_COMPILER_CLANG)
-	// On x64 with clang, the first 8x vector4f/quatf arguments can be passed by value in a register,
-	// everything else afterwards is passed by const&. They can also be returned by register.
-
-	using vector4f_arg0 = const vector4f;
-	using vector4f_arg1 = const vector4f;
-	using vector4f_arg2 = const vector4f;
-	using vector4f_arg3 = const vector4f;
-	using vector4f_arg4 = const vector4f;
-	using vector4f_arg5 = const vector4f;
-	using vector4f_arg6 = const vector4f;
-	using vector4f_arg7 = const vector4f;
-	using vector4f_argn = const vector4f&;
-
-	using quatf_arg0 = const quatf;
-	using quatf_arg1 = const quatf;
-	using quatf_arg2 = const quatf;
-	using quatf_arg3 = const quatf;
-	using quatf_arg4 = const quatf;
-	using quatf_arg5 = const quatf;
-	using quatf_arg6 = const quatf;
-	using quatf_arg7 = const quatf;
-	using quatf_argn = const quatf&;
-
-	using scalarf_arg0 = const scalarf;
-	using scalarf_arg1 = const scalarf;
-	using scalarf_arg2 = const scalarf;
-	using scalarf_arg3 = const scalarf;
-	using scalarf_arg4 = const scalarf;
-	using scalarf_arg5 = const scalarf;
-	using scalarf_arg6 = const scalarf;
-	using scalarf_arg7 = const scalarf;
-	using scalarf_argn = const scalarf&;
-
-	using mask4f_arg0 = const mask4f;
-	using mask4f_arg1 = const mask4f;
-	using mask4f_arg2 = const mask4f;
-	using mask4f_arg3 = const mask4f;
-	using mask4f_arg4 = const mask4f;
-	using mask4f_arg5 = const mask4f;
-	using mask4f_arg6 = const mask4f;
-	using mask4f_arg7 = const mask4f;
-	using mask4f_argn = const mask4f&;
-
-	using mask4i_arg0 = const mask4i;
-	using mask4i_arg1 = const mask4i;
-	using mask4i_arg2 = const mask4i;
-	using mask4i_arg3 = const mask4i;
-	using mask4i_arg4 = const mask4i;
-	using mask4i_arg5 = const mask4i;
-	using mask4i_arg6 = const mask4i;
-	using mask4i_arg7 = const mask4i;
-	using mask4i_argn = const mask4i&;
-
-	// We could pass up to 2 full qvvf types by register and the rotation/translation of
-	// the third but aggregates are not returned by register.
-	// TODO: Measure the impact of this because it could potentially degrade performance
-	// if multiple qvv_mul(..) are called, forcing the return value to be written and read back
-	// before the next function call can be made. It might be faster regardless as the compiler
-	// might be able to insert other instructions in between.
-
-	using qvvf_arg0 = const qvvf&;
-	using qvvf_arg1 = const qvvf&;
-	using qvvf_argn = const qvvf&;
-
-	using matrix3x3f_arg0 = const matrix3x3f&;
-	using matrix3x3f_arg1 = const matrix3x3f&;
-	using matrix3x3f_argn = const matrix3x3f&;
-
-	using matrix3x4f_arg0 = const matrix3x4f&;
-	using matrix3x4f_arg1 = const matrix3x4f&;
-	using matrix3x4f_argn = const matrix3x4f&;
-
-	using matrix4x4f_arg0 = const matrix4x4f&;
-	using matrix4x4f_arg1 = const matrix4x4f&;
-	using matrix4x4f_argn = const matrix4x4f&;
-#else
-	// On every other platform, everything is passed by const&
-	using vector4f_arg0 = const vector4f&;
-	using vector4f_arg1 = const vector4f&;
-	using vector4f_arg2 = const vector4f&;
-	using vector4f_arg3 = const vector4f&;
-	using vector4f_arg4 = const vector4f&;
-	using vector4f_arg5 = const vector4f&;
-	using vector4f_arg6 = const vector4f&;
-	using vector4f_arg7 = const vector4f&;
-	using vector4f_argn = const vector4f&;
-
-	using quatf_arg0 = const quatf&;
-	using quatf_arg1 = const quatf&;
-	using quatf_arg2 = const quatf&;
-	using quatf_arg3 = const quatf&;
-	using quatf_arg4 = const quatf&;
-	using quatf_arg5 = const quatf&;
-	using quatf_arg6 = const quatf&;
-	using quatf_arg7 = const quatf&;
-	using quatf_argn = const quatf&;
-
-	using scalarf_arg0 = const scalarf;
-	using scalarf_arg1 = const scalarf;
-	using scalarf_arg2 = const scalarf;
-	using scalarf_arg3 = const scalarf;
-	using scalarf_arg4 = const scalarf;
-	using scalarf_arg5 = const scalarf;
-	using scalarf_arg6 = const scalarf;
-	using scalarf_arg7 = const scalarf;
-	using scalarf_argn = const scalarf;
-
-	using mask4f_arg0 = const mask4f&;
-	using mask4f_arg1 = const mask4f&;
-	using mask4f_arg2 = const mask4f&;
-	using mask4f_arg3 = const mask4f&;
-	using mask4f_arg4 = const mask4f&;
-	using mask4f_arg5 = const mask4f&;
-	using mask4f_arg6 = const mask4f&;
-	using mask4f_arg7 = const mask4f&;
-	using mask4f_argn = const mask4f&;
-
-	using mask4i_arg0 = const mask4i&;
-	using mask4i_arg1 = const mask4i&;
-	using mask4i_arg2 = const mask4i&;
-	using mask4i_arg3 = const mask4i&;
-	using mask4i_arg4 = const mask4i&;
-	using mask4i_arg5 = const mask4i&;
-	using mask4i_arg6 = const mask4i&;
-	using mask4i_arg7 = const mask4i&;
-	using mask4i_argn = const mask4i&;
-
-	using qvvf_arg0 = const qvvf&;
-	using qvvf_arg1 = const qvvf&;
-	using qvvf_argn = const qvvf&;
-
-	using matrix3x3f_arg0 = const matrix3x3f&;
-	using matrix3x3f_arg1 = const matrix3x3f&;
-	using matrix3x3f_argn = const matrix3x3f&;
-
-	using matrix3x4f_arg0 = const matrix3x4f&;
-	using matrix3x4f_arg1 = const matrix3x4f&;
-	using matrix3x4f_argn = const matrix3x4f&;
-
-	using matrix4x4f_arg0 = const matrix4x4f&;
-	using matrix4x4f_arg1 = const matrix4x4f&;
-	using matrix4x4f_argn = const matrix4x4f&;
-#endif
+	// The previous names of the vqvd_arg0, vqvd_arg1, and vqvd_argn types.
+	using qvvd_arg0 RTM_DEPRECATED("Use 'vqvd_arg0' instead. To be removed in 2.5.") = vqvd_arg0;
+	using qvvd_arg1 RTM_DEPRECATED("Use 'vqvd_arg1' instead. To be removed in 2.5.") = vqvd_arg1;
+	using qvvd_argn RTM_DEPRECATED("Use 'vqvd_argn' instead. To be removed in 2.5.") = vqvd_argn;
 
 	RTM_IMPL_VERSION_NAMESPACE_END
 }
+
+RTM_IMPL_FILE_PRAGMA_POP

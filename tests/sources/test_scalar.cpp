@@ -23,7 +23,7 @@
 // SOFTWARE.
 ////////////////////////////////////////////////////////////////////////////////
 
-#include <catch2/catch.hpp>
+#include "catch2.impl.h"
 
 #include <rtm/scalarf.h>
 #include <rtm/scalard.h>
@@ -31,6 +31,7 @@
 #include <rtm/vector4f.h>
 #include <rtm/vector4d.h>
 
+#include <cmath>
 #include <limits>
 
 using namespace rtm;
@@ -44,7 +45,7 @@ static void test_scalar_impl(const FloatType threshold, const FloatType trig_thr
 	CHECK(scalar_cast(scalar_set(FloatType(0.2345))) == FloatType(0.2345));
 
 	const FloatType value = FloatType(0.2345);
-	CHECK(scalar_equal(scalar_load(&value), scalar_set(value)));
+	CHECK(scalar_equal(scalar_load_as_scalar(&value), scalar_set(value)));
 	CHECK(scalar_load(&value) == FloatType(0.2345));
 
 	FloatType tmp = FloatType(0.0);
@@ -55,6 +56,7 @@ static void test_scalar_impl(const FloatType threshold, const FloatType trig_thr
 
 	CHECK(scalar_floor(FloatType(0.0)) == FloatType(0.0));
 	CHECK(scalar_floor(FloatType(-0.0)) == FloatType(0.0));
+	CHECK(std::signbit(scalar_floor(FloatType(-0.0))) == std::signbit(std::floor(FloatType(-0.0))));
 	CHECK(scalar_floor(FloatType(0.5)) == FloatType(0.0));
 	CHECK(scalar_floor(FloatType(2.5)) == FloatType(2.0));
 	CHECK(scalar_floor(FloatType(3.0)) == FloatType(3.0));
@@ -67,6 +69,7 @@ static void test_scalar_impl(const FloatType threshold, const FloatType trig_thr
 
 	CHECK(scalar_cast(scalar_floor(scalar_set(FloatType(0.0)))) == FloatType(0.0));
 	CHECK(scalar_cast(scalar_floor(scalar_set(FloatType(-0.0)))) == FloatType(0.0));
+	CHECK(std::signbit(scalar_cast(scalar_floor(scalar_set(FloatType(-0.0))))) == std::signbit(std::floor(FloatType(-0.0))));
 	CHECK(scalar_cast(scalar_floor(scalar_set(FloatType(0.5)))) == FloatType(0.0));
 	CHECK(scalar_cast(scalar_floor(scalar_set(FloatType(2.5)))) == FloatType(2.0));
 	CHECK(scalar_cast(scalar_floor(scalar_set(FloatType(3.0)))) == FloatType(3.0));
@@ -79,6 +82,8 @@ static void test_scalar_impl(const FloatType threshold, const FloatType trig_thr
 
 	CHECK(scalar_ceil(FloatType(0.0)) == FloatType(0.0));
 	CHECK(scalar_ceil(FloatType(-0.0)) == FloatType(0.0));
+	CHECK(std::signbit(scalar_ceil(FloatType(-0.0))) == std::signbit(std::ceil(FloatType(-0.0))));
+	CHECK(std::signbit(scalar_ceil(FloatType(-0.5))) == std::signbit(std::ceil(FloatType(-0.5))));
 	CHECK(scalar_ceil(FloatType(0.5)) == FloatType(1.0));
 	CHECK(scalar_ceil(FloatType(2.5)) == FloatType(3.0));
 	CHECK(scalar_ceil(FloatType(3.0)) == FloatType(3.0));
@@ -91,6 +96,8 @@ static void test_scalar_impl(const FloatType threshold, const FloatType trig_thr
 
 	CHECK(scalar_cast(scalar_ceil(scalar_set(FloatType(0.0)))) == FloatType(0.0));
 	CHECK(scalar_cast(scalar_ceil(scalar_set(FloatType(-0.0)))) == FloatType(0.0));
+	CHECK(std::signbit(scalar_cast(scalar_ceil(scalar_set(FloatType(-0.0))))) == std::signbit(std::ceil(FloatType(-0.0))));
+	CHECK(std::signbit(scalar_cast(scalar_ceil(scalar_set(FloatType(-0.5))))) == std::signbit(std::ceil(FloatType(-0.5))));
 	CHECK(scalar_cast(scalar_ceil(scalar_set(FloatType(0.5)))) == FloatType(1.0));
 	CHECK(scalar_cast(scalar_ceil(scalar_set(FloatType(2.5)))) == FloatType(3.0));
 	CHECK(scalar_cast(scalar_ceil(scalar_set(FloatType(3.0)))) == FloatType(3.0));
@@ -225,7 +232,47 @@ static void test_scalar_impl(const FloatType threshold, const FloatType trig_thr
 	CHECK(scalar_near_equal(scalar_lerp(scalar_set(values[0]), scalar_set(values[1]), scalar_set(FloatType(0.0))), scalar_set(values[0]), scalar_set(FloatType(0.0))));
 	CHECK(scalar_near_equal(scalar_lerp(scalar_set(values[0]), scalar_set(values[1]), scalar_set(FloatType(1.0))), scalar_set(values[1]), scalar_set(FloatType(0.0))));
 
-	using Vector4Type = typename float_traits<FloatType>::vector4;
+	// The error of exp is relative to the result
+	const FloatType exp_inputs[] = { FloatType(0.0), FloatType(1.0), FloatType(-1.0), FloatType(0.5), FloatType(-2.75), FloatType(10.0), FloatType(-20.0), FloatType(80.0) };
+	for (const FloatType input : exp_inputs)
+	{
+		const FloatType ref = std::exp(input);
+		INFO("exp(" << input << ") = " << ref);
+		CHECK(scalar_abs(scalar_exp(input) - ref) <= threshold * ref);
+		CHECK(scalar_abs(scalar_cast(scalar_exp(scalar_set(input))) - ref) <= threshold * ref);
+	}
+
+	CHECK(scalar_exp(-infinity) == FloatType(0.0));
+	CHECK(scalar_exp(infinity) == infinity);
+	CHECK(std::isnan(scalar_exp(nan)));
+
+	// The error of log is relative to the result, or absolute when the result is near zero
+	const FloatType log_inputs[] = { FloatType(1.0), FloatType(2.0), FloatType(0.5), FloatType(10.0), FloatType(1.0E-30), FloatType(1.0E30), FloatType(0.1), FloatType(123456.0) };
+	for (const FloatType input : log_inputs)
+	{
+		const FloatType ref = std::log(input);
+		INFO("log(" << input << ") = " << ref);
+		CHECK(scalar_abs(scalar_log(input) - ref) <= threshold * scalar_max(FloatType(1.0), scalar_abs(ref)));
+		CHECK(scalar_abs(scalar_cast(scalar_log(scalar_set(input))) - ref) <= threshold * scalar_max(FloatType(1.0), scalar_abs(ref)));
+	}
+
+	CHECK(scalar_log(FloatType(0.0)) == -infinity);
+	CHECK(scalar_log(infinity) == infinity);
+	CHECK(std::isnan(scalar_log(FloatType(-1.0))));
+	CHECK(std::isnan(scalar_log(nan)));
+
+	// Exponential interpolation: 2 * 4^0.5, -2 * 4^0.5, 4 * 0.25^0.5
+	CHECK(scalar_near_equal(scalar_eerp(FloatType(2.0), FloatType(8.0), FloatType(0.5)), FloatType(4.0), threshold * FloatType(4.0)));
+	CHECK(scalar_near_equal(scalar_eerp(FloatType(-2.0), FloatType(-8.0), FloatType(0.5)), FloatType(-4.0), threshold * FloatType(4.0)));
+	CHECK(scalar_near_equal(scalar_eerp(FloatType(4.0), FloatType(1.0), FloatType(0.5)), FloatType(2.0), threshold * FloatType(4.0)));
+	CHECK(scalar_near_equal(scalar_cast(scalar_eerp(scalar_set(FloatType(2.0)), scalar_set(FloatType(8.0)), scalar_set(FloatType(0.5)))), FloatType(4.0), threshold * FloatType(4.0)));
+
+	// The result is exactly 'start' when alpha is 0.0, and approximately 'end' when alpha is 1.0
+	CHECK(scalar_eerp(FloatType(2.0), FloatType(8.0), FloatType(0.0)) == FloatType(2.0));
+	CHECK(scalar_near_equal(scalar_eerp(FloatType(2.0), FloatType(8.0), FloatType(1.0)), FloatType(8.0), threshold * FloatType(8.0)));
+	CHECK(scalar_cast(scalar_eerp(scalar_set(FloatType(2.0)), scalar_set(FloatType(8.0)), scalar_set(FloatType(0.0)))) == FloatType(2.0));
+
+	using Vector4Type = typename related_types<FloatType>::vector4;
 
 	const FloatType half_pi = FloatType(rtm::constants::half_pi());
 	const FloatType pi = FloatType(rtm::constants::pi());
@@ -435,13 +482,58 @@ static void test_scalar_impl(const FloatType threshold, const FloatType trig_thr
 	CHECK(scalar_cast(scalar_round_bankers(scalar_set(FloatType(1.75)))) == FloatType(2.0));
 	CHECK(scalar_cast(scalar_round_bankers(scalar_set(FloatType(2.5)))) == FloatType(2.0));
 
+	{
+		// The round functions keep the sign of the input as std::round and std::nearbyint do
+		// The large values have no fractional part, and a conversion to an integer overflows for them
+		// An addition of 0.5 rounds for some values: 0.49999997 + 0.5 = 1.0 and 8388609.0 + 0.5 = 8388610.0 (float32)
+		// The float64 values are 0.49999999999999994 and 4503599627370497.0
+		const FloatType largest_below_half = std::nextafter(FloatType(0.5), FloatType(0.0));
+		const FloatType smallest_odd_without_fraction = FloatType(std::ldexp(FloatType(1.0), std::numeric_limits<FloatType>::digits - 1)) + FloatType(1.0);
+		const FloatType largest_below_one_and_half = std::nextafter(FloatType(1.5), FloatType(0.0));
+
+		const FloatType round_inputs[] =
+		{
+			FloatType(-0.0), FloatType(0.0), FloatType(-0.3), FloatType(-0.5), FloatType(0.5), FloatType(-0.7), FloatType(-2.5), FloatType(2.5),
+			FloatType(1.0e10), FloatType(-1.0e10), FloatType(1.0e30), FloatType(-1.0e30),
+			largest_below_half, -largest_below_half, smallest_odd_without_fraction, -smallest_odd_without_fraction,
+			largest_below_one_and_half, -largest_below_one_and_half,
+		};
+		for (const FloatType input : round_inputs)
+		{
+			INFO("input: " << input);
+
+			const FloatType ref_symmetric = std::round(input);
+			const FloatType ref_bankers = std::nearbyint(input);
+
+			const FloatType symmetric_result = scalar_round_symmetric(input);
+			const FloatType symmetric_result_s = scalar_cast(scalar_round_symmetric(scalar_set(input)));
+			const FloatType bankers_result = scalar_round_bankers(input);
+			const FloatType bankers_result_s = scalar_cast(scalar_round_bankers(scalar_set(input)));
+
+			CHECK(symmetric_result == ref_symmetric);
+			CHECK(std::signbit(symmetric_result) == std::signbit(ref_symmetric));
+			CHECK(symmetric_result_s == ref_symmetric);
+			CHECK(std::signbit(symmetric_result_s) == std::signbit(ref_symmetric));
+			CHECK(bankers_result == ref_bankers);
+			CHECK(std::signbit(bankers_result) == std::signbit(ref_bankers));
+			CHECK(bankers_result_s == ref_bankers);
+			CHECK(std::signbit(bankers_result_s) == std::signbit(ref_bankers));
+		}
+	}
+
 	CHECK(scalar_fraction(FloatType(0.0)) == FloatType(0.0));
 	CHECK(scalar_fraction(FloatType(-0.0)) == FloatType(0.0));
+	CHECK(std::signbit(scalar_fraction(FloatType(-0.0))) == std::signbit(FloatType(-0.0) - std::floor(FloatType(-0.0))));
 	CHECK(scalar_fraction(FloatType(1.0)) == FloatType(0.0));
 	CHECK(scalar_fraction(FloatType(-1.0)) == FloatType(0.0));
 	CHECK(scalar_near_equal(scalar_fraction(FloatType(0.25)), FloatType(0.25), threshold));
 	CHECK(scalar_near_equal(scalar_fraction(FloatType(0.5)), FloatType(0.5), threshold));
 	CHECK(scalar_near_equal(scalar_fraction(FloatType(0.75)), FloatType(0.75), threshold));
+	CHECK(scalar_near_equal(scalar_fraction(FloatType(1.25)), FloatType(0.25), threshold));
+
+	// The fraction is relative to the floor, thus it is positive for a negative input
+	CHECK(scalar_near_equal(scalar_fraction(FloatType(-0.25)), FloatType(0.75), threshold));
+	CHECK(scalar_near_equal(scalar_fraction(FloatType(-1.75)), FloatType(0.25), threshold));
 
 	CHECK(scalar_deg_to_rad(FloatType(0.0)) == FloatType(0.0));
 	CHECK(scalar_near_equal(scalar_deg_to_rad(FloatType(90.0)), FloatType(rtm::constants::half_pi()), threshold));
@@ -464,48 +556,157 @@ TEST_CASE("scalarf math", "[math][scalar]")
 {
 	test_scalar_impl<float>(1.0E-6F, 1.0E-5F);
 
-	CHECK(scalar_floor(1073741824.5F) == 1073741824.0F);
-	CHECK(scalar_floor(-1073741824.5F) == -1073741824.0F);
-	CHECK(scalar_cast(scalar_floor(scalar_set(1073741824.5F))) == 1073741824.0F);
-	CHECK(scalar_cast(scalar_floor(scalar_set(-1073741824.5F))) == -1073741824.0F);
+	CHECK(scalar_floor(1073741824.0F) == 1073741824.0F);
+	CHECK(scalar_floor(-1073741824.0F) == -1073741824.0F);
+	CHECK(scalar_cast(scalar_floor(scalar_set(1073741824.0F))) == 1073741824.0F);
+	CHECK(scalar_cast(scalar_floor(scalar_set(-1073741824.0F))) == -1073741824.0F);
 
-	CHECK(scalar_ceil(1073741824.5F) == 1073741824.0F);
-	CHECK(scalar_ceil(-1073741824.5F) == -1073741824.0F);
-	CHECK(scalar_cast(scalar_ceil(scalar_set(1073741824.5F))) == 1073741824.0F);
-	CHECK(scalar_cast(scalar_ceil(scalar_set(-1073741824.5F))) == -1073741824.0F);
+	CHECK(scalar_ceil(1073741824.0F) == 1073741824.0F);
+	CHECK(scalar_ceil(-1073741824.0F) == -1073741824.0F);
+	CHECK(scalar_cast(scalar_ceil(scalar_set(1073741824.0F))) == 1073741824.0F);
+	CHECK(scalar_cast(scalar_ceil(scalar_set(-1073741824.0F))) == -1073741824.0F);
 
-	CHECK(scalar_round_symmetric(1073741824.5F) == 1073741824.0F);
-	CHECK(scalar_round_symmetric(-1073741824.5F) == -1073741824.0F);
-	CHECK(scalar_cast(scalar_round_symmetric(scalar_set(1073741824.5F))) == 1073741824.0F);
-	CHECK(scalar_cast(scalar_round_symmetric(scalar_set(-1073741824.5F))) == -1073741824.0F);
+	CHECK(scalar_round_symmetric(1073741824.0F) == 1073741824.0F);
+	CHECK(scalar_round_symmetric(-1073741824.0F) == -1073741824.0F);
+	CHECK(scalar_cast(scalar_round_symmetric(scalar_set(1073741824.0F))) == 1073741824.0F);
+	CHECK(scalar_cast(scalar_round_symmetric(scalar_set(-1073741824.0F))) == -1073741824.0F);
 
-	CHECK(scalar_round_bankers(1073741824.5F) == 1073741824.0F);
-	CHECK(scalar_round_bankers(-1073741824.5F) == -1073741824.0F);
-	CHECK(scalar_cast(scalar_round_bankers(scalar_set(1073741824.5F))) == 1073741824.0F);
-	CHECK(scalar_cast(scalar_round_bankers(scalar_set(-1073741824.5F))) == -1073741824.0F);
+	CHECK(scalar_round_bankers(1073741824.0F) == 1073741824.0F);
+	CHECK(scalar_round_bankers(-1073741824.0F) == -1073741824.0F);
+	CHECK(scalar_cast(scalar_round_bankers(scalar_set(1073741824.0F))) == 1073741824.0F);
+	CHECK(scalar_cast(scalar_round_bankers(scalar_set(-1073741824.0F))) == -1073741824.0F);
+
+	// The largest float32 values that have a fractional part
+	CHECK(scalar_floor(8388607.5F) == 8388607.0F);
+	CHECK(scalar_floor(-8388607.5F) == -8388608.0F);
+	CHECK(scalar_cast(scalar_floor(scalar_set(8388607.5F))) == 8388607.0F);
+	CHECK(scalar_cast(scalar_floor(scalar_set(-8388607.5F))) == -8388608.0F);
+
+	CHECK(scalar_ceil(8388607.5F) == 8388608.0F);
+	CHECK(scalar_ceil(-8388607.5F) == -8388607.0F);
+	CHECK(scalar_cast(scalar_ceil(scalar_set(8388607.5F))) == 8388608.0F);
+	CHECK(scalar_cast(scalar_ceil(scalar_set(-8388607.5F))) == -8388607.0F);
+
+	CHECK(scalar_round_symmetric(8388607.5F) == 8388608.0F);
+	CHECK(scalar_round_symmetric(-8388607.5F) == -8388608.0F);
+	CHECK(scalar_cast(scalar_round_symmetric(scalar_set(8388607.5F))) == 8388608.0F);
+	CHECK(scalar_cast(scalar_round_symmetric(scalar_set(-8388607.5F))) == -8388608.0F);
+
+	CHECK(scalar_round_bankers(8388607.5F) == 8388608.0F);
+	CHECK(scalar_round_bankers(-8388607.5F) == -8388608.0F);
+	CHECK(scalar_cast(scalar_round_bankers(scalar_set(8388607.5F))) == 8388608.0F);
+	CHECK(scalar_cast(scalar_round_bankers(scalar_set(-8388607.5F))) == -8388608.0F);
+
+	// A large tie where the two round functions give different results: the nearest even value is smaller
+	CHECK(scalar_round_symmetric(8388606.5F) == 8388607.0F);
+	CHECK(scalar_round_symmetric(-8388606.5F) == -8388607.0F);
+	CHECK(scalar_cast(scalar_round_symmetric(scalar_set(8388606.5F))) == 8388607.0F);
+	CHECK(scalar_cast(scalar_round_symmetric(scalar_set(-8388606.5F))) == -8388607.0F);
+
+	CHECK(scalar_round_bankers(8388606.5F) == 8388606.0F);
+	CHECK(scalar_round_bankers(-8388606.5F) == -8388606.0F);
+	CHECK(scalar_cast(scalar_round_bankers(scalar_set(8388606.5F))) == 8388606.0F);
+	CHECK(scalar_cast(scalar_round_bankers(scalar_set(-8388606.5F))) == -8388606.0F);
+
+	// An addition of 0.5 rounds for these values, the result must not use it
+	CHECK(scalar_round_symmetric(0.49999997F) == 0.0F);
+	CHECK(scalar_round_symmetric(-0.49999997F) == -0.0F);
+	CHECK(std::signbit(scalar_round_symmetric(-0.49999997F)));
+	CHECK(scalar_round_symmetric(8388609.0F) == 8388609.0F);
+	CHECK(scalar_round_symmetric(-8388609.0F) == -8388609.0F);
+	CHECK(scalar_cast(scalar_round_symmetric(scalar_set(0.49999997F))) == 0.0F);
+	CHECK(scalar_cast(scalar_round_symmetric(scalar_set(-0.49999997F))) == -0.0F);
+	CHECK(scalar_cast(scalar_round_symmetric(scalar_set(8388609.0F))) == 8388609.0F);
+	CHECK(scalar_cast(scalar_round_symmetric(scalar_set(-8388609.0F))) == -8388609.0F);
+
+	CHECK(scalar_safe_to_float(int32_t(0)) == 0.0F);
+	CHECK(scalar_safe_to_float(int32_t(-7)) == -7.0F);
+	CHECK(scalar_safe_to_float(uint8_t(255)) == 255.0F);
+	CHECK(scalar_safe_to_float(int32_t(16777216)) == 16777216.0F);
+	CHECK(scalar_safe_to_float(int64_t(-16777216)) == -16777216.0F);
+	CHECK(scalar_safe_to_float(uint32_t(4294967040U)) == 4294967040.0F);
+
+	// A float32 cannot represent 2^24 + 1
+	CHECK_THROWS(scalar_safe_to_float(int32_t(16777217)));
+	CHECK_THROWS(scalar_safe_to_float(int64_t(-16777217)));
 }
 
 TEST_CASE("scalard math", "[math][scalar]")
 {
 	test_scalar_impl<double>(1.0E-9, 1.0E-9);
 
-	CHECK(scalar_floor(36028797018963968.5) == 36028797018963968.5);
-	CHECK(scalar_floor(-36028797018963968.5) == -36028797018963968.5);
-	CHECK(scalar_cast(scalar_floor(scalar_set(36028797018963968.5))) == 36028797018963968.5);
-	CHECK(scalar_cast(scalar_floor(scalar_set(-36028797018963968.5))) == -36028797018963968.5);
+	CHECK(scalar_floor(36028797018963968.0) == 36028797018963968.0);
+	CHECK(scalar_floor(-36028797018963968.0) == -36028797018963968.0);
+	CHECK(scalar_cast(scalar_floor(scalar_set(36028797018963968.0))) == 36028797018963968.0);
+	CHECK(scalar_cast(scalar_floor(scalar_set(-36028797018963968.0))) == -36028797018963968.0);
 
-	CHECK(scalar_ceil(36028797018963968.5) == 36028797018963968.5);
-	CHECK(scalar_ceil(-36028797018963968.5) == -36028797018963968.5);
-	CHECK(scalar_cast(scalar_ceil(scalar_set(36028797018963968.5))) == 36028797018963968.5);
-	CHECK(scalar_cast(scalar_ceil(scalar_set(-36028797018963968.5))) == -36028797018963968.5);
+	CHECK(scalar_ceil(36028797018963968.0) == 36028797018963968.0);
+	CHECK(scalar_ceil(-36028797018963968.0) == -36028797018963968.0);
+	CHECK(scalar_cast(scalar_ceil(scalar_set(36028797018963968.0))) == 36028797018963968.0);
+	CHECK(scalar_cast(scalar_ceil(scalar_set(-36028797018963968.0))) == -36028797018963968.0);
 
-	CHECK(scalar_round_symmetric(36028797018963968.5) == 36028797018963968.5);
-	CHECK(scalar_round_symmetric(-36028797018963968.5) == -36028797018963968.5);
-	CHECK(scalar_cast(scalar_round_symmetric(scalar_set(36028797018963968.5))) == 36028797018963968.5);
-	CHECK(scalar_cast(scalar_round_symmetric(scalar_set(-36028797018963968.5))) == -36028797018963968.5);
+	CHECK(scalar_round_symmetric(36028797018963968.0) == 36028797018963968.0);
+	CHECK(scalar_round_symmetric(-36028797018963968.0) == -36028797018963968.0);
+	CHECK(scalar_cast(scalar_round_symmetric(scalar_set(36028797018963968.0))) == 36028797018963968.0);
+	CHECK(scalar_cast(scalar_round_symmetric(scalar_set(-36028797018963968.0))) == -36028797018963968.0);
 
-	CHECK(scalar_round_bankers(36028797018963968.5) == 36028797018963968.5);
-	CHECK(scalar_round_bankers(-36028797018963968.5) == -36028797018963968.5);
-	CHECK(scalar_cast(scalar_round_bankers(scalar_set(36028797018963968.5))) == 36028797018963968.5);
-	CHECK(scalar_cast(scalar_round_bankers(scalar_set(-36028797018963968.5))) == -36028797018963968.5);
+	CHECK(scalar_round_bankers(36028797018963968.0) == 36028797018963968.0);
+	CHECK(scalar_round_bankers(-36028797018963968.0) == -36028797018963968.0);
+	CHECK(scalar_cast(scalar_round_bankers(scalar_set(36028797018963968.0))) == 36028797018963968.0);
+	CHECK(scalar_cast(scalar_round_bankers(scalar_set(-36028797018963968.0))) == -36028797018963968.0);
+
+	// The largest float64 values that have a fractional part
+	CHECK(scalar_floor(4503599627370495.5) == 4503599627370495.0);
+	CHECK(scalar_floor(-4503599627370495.5) == -4503599627370496.0);
+	CHECK(scalar_cast(scalar_floor(scalar_set(4503599627370495.5))) == 4503599627370495.0);
+	CHECK(scalar_cast(scalar_floor(scalar_set(-4503599627370495.5))) == -4503599627370496.0);
+
+	CHECK(scalar_ceil(4503599627370495.5) == 4503599627370496.0);
+	CHECK(scalar_ceil(-4503599627370495.5) == -4503599627370495.0);
+	CHECK(scalar_cast(scalar_ceil(scalar_set(4503599627370495.5))) == 4503599627370496.0);
+	CHECK(scalar_cast(scalar_ceil(scalar_set(-4503599627370495.5))) == -4503599627370495.0);
+
+	CHECK(scalar_round_symmetric(4503599627370495.5) == 4503599627370496.0);
+	CHECK(scalar_round_symmetric(-4503599627370495.5) == -4503599627370496.0);
+	CHECK(scalar_cast(scalar_round_symmetric(scalar_set(4503599627370495.5))) == 4503599627370496.0);
+	CHECK(scalar_cast(scalar_round_symmetric(scalar_set(-4503599627370495.5))) == -4503599627370496.0);
+
+	CHECK(scalar_round_bankers(4503599627370495.5) == 4503599627370496.0);
+	CHECK(scalar_round_bankers(-4503599627370495.5) == -4503599627370496.0);
+	CHECK(scalar_cast(scalar_round_bankers(scalar_set(4503599627370495.5))) == 4503599627370496.0);
+	CHECK(scalar_cast(scalar_round_bankers(scalar_set(-4503599627370495.5))) == -4503599627370496.0);
+
+	// A large tie where the two round functions give different results: the nearest even value is smaller
+	CHECK(scalar_round_symmetric(4503599627370494.5) == 4503599627370495.0);
+	CHECK(scalar_round_symmetric(-4503599627370494.5) == -4503599627370495.0);
+	CHECK(scalar_cast(scalar_round_symmetric(scalar_set(4503599627370494.5))) == 4503599627370495.0);
+	CHECK(scalar_cast(scalar_round_symmetric(scalar_set(-4503599627370494.5))) == -4503599627370495.0);
+
+	CHECK(scalar_round_bankers(4503599627370494.5) == 4503599627370494.0);
+	CHECK(scalar_round_bankers(-4503599627370494.5) == -4503599627370494.0);
+	CHECK(scalar_cast(scalar_round_bankers(scalar_set(4503599627370494.5))) == 4503599627370494.0);
+	CHECK(scalar_cast(scalar_round_bankers(scalar_set(-4503599627370494.5))) == -4503599627370494.0);
+
+	// An addition of 0.5 rounds for these values, the result must not use it
+	CHECK(scalar_round_symmetric(0.49999999999999994) == 0.0);
+	CHECK(scalar_round_symmetric(-0.49999999999999994) == -0.0);
+	CHECK(std::signbit(scalar_round_symmetric(-0.49999999999999994)));
+	CHECK(scalar_round_symmetric(4503599627370497.0) == 4503599627370497.0);
+	CHECK(scalar_round_symmetric(-4503599627370497.0) == -4503599627370497.0);
+	CHECK(scalar_cast(scalar_round_symmetric(scalar_set(0.49999999999999994))) == 0.0);
+	CHECK(scalar_cast(scalar_round_symmetric(scalar_set(-0.49999999999999994))) == -0.0);
+	CHECK(scalar_cast(scalar_round_symmetric(scalar_set(4503599627370497.0))) == 4503599627370497.0);
+	CHECK(scalar_cast(scalar_round_symmetric(scalar_set(-4503599627370497.0))) == -4503599627370497.0);
+
+	CHECK(scalar_safe_to_double(int32_t(0)) == 0.0);
+	CHECK(scalar_safe_to_double(int32_t(-7)) == -7.0);
+	CHECK(scalar_safe_to_double(uint8_t(255)) == 255.0);
+	CHECK(scalar_safe_to_double(int32_t(2147483647)) == 2147483647.0);
+	CHECK(scalar_safe_to_double(uint32_t(4294967295U)) == 4294967295.0);
+	CHECK(scalar_safe_to_double(int64_t(9007199254740992LL)) == 9007199254740992.0);
+	CHECK(scalar_safe_to_double(int64_t(-9007199254740992LL)) == -9007199254740992.0);
+
+	// A float64 cannot represent 2^53 + 1
+	CHECK_THROWS(scalar_safe_to_double(int64_t(9007199254740993LL)));
+	CHECK_THROWS(scalar_safe_to_double(int64_t(-9007199254740993LL)));
 }

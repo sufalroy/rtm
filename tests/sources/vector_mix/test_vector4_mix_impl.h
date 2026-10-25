@@ -24,10 +24,11 @@
 // SOFTWARE.
 ////////////////////////////////////////////////////////////////////////////////
 
-#include <catch2/catch.hpp>
+#include "catch2.impl.h"
 
-#include <rtm/vector4f.h>
-#include <rtm/vector4d.h>
+// cpp files that include this header must include the vector header they wish to use
+//#include <rtm/vector4f.h>
+//#include <rtm/vector4d.h>
 
 using namespace rtm;
 

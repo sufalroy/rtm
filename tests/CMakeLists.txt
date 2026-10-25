@@ -1,4 +1,3 @@
-cmake_minimum_required(VERSION 3.2)
 project(rtm_unit_tests_root NONE)
 
 if(PLATFORM_ANDROID)
@@ -9,4 +8,5 @@ elseif(PLATFORM_EMSCRIPTEN)
 	add_subdirectory("${PROJECT_SOURCE_DIR}/main_emscripten")
 else()
 	add_subdirectory("${PROJECT_SOURCE_DIR}/main_generic")
+	add_subdirectory("${PROJECT_SOURCE_DIR}/validate_includes")
 endif()

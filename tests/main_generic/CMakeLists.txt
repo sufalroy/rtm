@@ -1,15 +1,20 @@
-cmake_minimum_required (VERSION 3.2)
 project(rtm_unit_tests CXX)
-
-set(CMAKE_CXX_STANDARD 11)
 
 include_directories("${PROJECT_SOURCE_DIR}/../../includes")
 include_directories("${PROJECT_SOURCE_DIR}/../../external/catch2/single_include")
+include_directories("${PROJECT_SOURCE_DIR}/../sources")
 
 # Grab all of our test source files
 file(GLOB_RECURSE ALL_TEST_SOURCE_FILES LIST_DIRECTORIES false
 	${PROJECT_SOURCE_DIR}/../sources/*.h
 	${PROJECT_SOURCE_DIR}/../sources/*.cpp)
+
+if(NOT WITH_VECTOR_MIX_TESTS)
+	# The vector_mix unit tests are slow to compile, do not compile them when they are disabled
+	file(GLOB VECTOR_MIX_SOURCE_FILES LIST_DIRECTORIES false
+		${PROJECT_SOURCE_DIR}/../sources/vector_mix/*.cpp)
+	list(REMOVE_ITEM ALL_TEST_SOURCE_FILES ${VECTOR_MIX_SOURCE_FILES})
+endif()
 
 create_source_groups("${ALL_TEST_SOURCE_FILES}" ${PROJECT_SOURCE_DIR}/..)
 
@@ -21,10 +26,13 @@ create_source_groups("${ALL_MAIN_SOURCE_FILES}" ${PROJECT_SOURCE_DIR})
 
 add_executable(${PROJECT_NAME} ${ALL_TEST_SOURCE_FILES} ${ALL_MAIN_SOURCE_FILES})
 
-list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/../../external/catch2/contrib")
-include(CTest)
-include(Catch)
-catch_discover_tests(${PROJECT_NAME})
+if(NOT IS_CROSS_COMPILING)
+	# Don't attempt to detect unit tests if we are cross-compiling
+	list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/../../external/catch2/contrib")
+	include(CTest)
+	include(Catch)
+	catch_discover_tests(${PROJECT_NAME})
+endif()
 
 setup_default_compiler_flags(${PROJECT_NAME})
 

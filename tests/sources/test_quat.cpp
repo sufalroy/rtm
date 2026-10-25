@@ -23,13 +23,16 @@
 // SOFTWARE.
 ////////////////////////////////////////////////////////////////////////////////
 
-#include <catch2/catch.hpp>
+#include "catch2.impl.h"
 
 #include <rtm/type_traits.h>
+#include <rtm/mask4f.h>
+#include <rtm/mask4d.h>
 #include <rtm/quatf.h>
 #include <rtm/quatd.h>
 #include <rtm/vector4f.h>
 #include <rtm/vector4d.h>
+#include <rtm/impl/bit_cast.impl.h>
 
 #include <array>
 #include <limits>
@@ -40,17 +43,31 @@ template<typename QuatType, typename Vector4Type, typename FloatType>
 static Vector4Type quat_rotate_scalar(const Vector4Type& vector, const QuatType& rotation)
 {
 	// (q.W*q.W-qv.qv)v + 2(qv.v)qv + 2 q.W (qv x v)
-	FloatType rotation_x = quat_get_x(rotation);
-	FloatType rotation_y = quat_get_y(rotation);
-	FloatType rotation_z = quat_get_z(rotation);
-	Vector4Type qv = vector_set(rotation_x, rotation_y, rotation_z);
+	// Do not use vector_set with the [xyz] components of the rotation: with constant rotations in a loop,
+	// that code causes an internal compiler error with GCC 14 and 15 on ARM64.
+	// vector_set_w uses a different NEON sequence and the compiler error does not occur.
+	Vector4Type qv = vector_set_w(quat_to_vector(rotation), FloatType(0.0));
 	Vector4Type vOut = vector_mul(vector_cross3(qv, vector), FloatType(2.0) * quat_get_w(rotation));
 	vOut = vector_add(vOut, vector_mul(vector, (quat_get_w(rotation) * quat_get_w(rotation)) - vector_dot(qv, qv)));
 	vOut = vector_add(vOut, vector_mul(qv, FloatType(2.0) * vector_dot(qv, vector)));
 	return vOut;
 }
 
-template<typename QuatType, typename Vector4Type, typename FloatType>
+template<typename QuatType, typename FloatType>
+static QuatType quat_add_scalar(const QuatType& lhs, const QuatType& rhs)
+{
+	FloatType lhs_raw[4] = { quat_get_x(lhs), quat_get_y(lhs), quat_get_z(lhs), quat_get_w(lhs) };
+	FloatType rhs_raw[4] = { quat_get_x(rhs), quat_get_y(rhs), quat_get_z(rhs), quat_get_w(rhs) };
+
+	FloatType x = lhs_raw[0] + rhs_raw[0];
+	FloatType y = lhs_raw[1] + rhs_raw[1];
+	FloatType z = lhs_raw[2] + rhs_raw[2];
+	FloatType w = lhs_raw[3] + rhs_raw[3];
+
+	return quat_set(x, y, z, w);
+}
+
+template<typename QuatType, typename FloatType>
 static QuatType quat_mul_scalar(const QuatType& lhs, const QuatType& rhs)
 {
 	FloatType lhs_raw[4] = { quat_get_x(lhs), quat_get_y(lhs), quat_get_z(lhs), quat_get_w(lhs) };
@@ -60,6 +77,19 @@ static QuatType quat_mul_scalar(const QuatType& lhs, const QuatType& rhs)
 	FloatType y = (rhs_raw[3] * lhs_raw[1]) - (rhs_raw[0] * lhs_raw[2]) + (rhs_raw[1] * lhs_raw[3]) + (rhs_raw[2] * lhs_raw[0]);
 	FloatType z = (rhs_raw[3] * lhs_raw[2]) + (rhs_raw[0] * lhs_raw[1]) - (rhs_raw[1] * lhs_raw[0]) + (rhs_raw[2] * lhs_raw[3]);
 	FloatType w = (rhs_raw[3] * lhs_raw[3]) - (rhs_raw[0] * lhs_raw[0]) - (rhs_raw[1] * lhs_raw[1]) - (rhs_raw[2] * lhs_raw[2]);
+
+	return quat_set(x, y, z, w);
+}
+
+template<typename QuatType, typename FloatType>
+static QuatType quat_mul_scalar(const QuatType& lhs, FloatType rhs)
+{
+	FloatType lhs_raw[4] = { quat_get_x(lhs), quat_get_y(lhs), quat_get_z(lhs), quat_get_w(lhs) };
+
+	FloatType x = lhs_raw[0] * rhs;
+	FloatType y = lhs_raw[1] * rhs;
+	FloatType z = lhs_raw[2] * rhs;
+	FloatType w = lhs_raw[3] * rhs;
 
 	return quat_set(x, y, z, w);
 }
@@ -92,10 +122,11 @@ static QuatType scalar_lerp(const QuatType& start, const QuatType& end, FloatTyp
 template<typename FloatType>
 static void test_quat_impl(const FloatType threshold)
 {
-	using QuatType = typename float_traits<FloatType>::quat;
-	using Vector4Type = typename float_traits<FloatType>::vector4;
-	using Float4Type = typename float_traits<FloatType>::float4;
-	using ScalarType = typename float_traits<FloatType>::scalar;
+	using QuatType = typename related_types<FloatType>::quat;
+	using Vector4Type = typename related_types<FloatType>::vector4;
+	using Float4Type = typename related_types<FloatType>::float4;
+	using ScalarType = typename related_types<FloatType>::scalar;
+	using MaskType = typename related_types<FloatType>::mask4;
 
 	const Vector4Type zero = vector_zero();
 	const QuatType identity = quat_identity();
@@ -108,10 +139,10 @@ static void test_quat_impl(const FloatType threshold)
 	CHECK(FloatType(quat_get_z(quat_set(FloatType(0.0), FloatType(2.34), FloatType(-3.12), FloatType(10000.0)))) == FloatType(-3.12));
 	CHECK(FloatType(quat_get_w(quat_set(FloatType(0.0), FloatType(2.34), FloatType(-3.12), FloatType(10000.0)))) == FloatType(10000.0));
 
-	CHECK(scalar_cast(quat_get_x(quat_set(FloatType(0.0), FloatType(2.34), FloatType(-3.12), FloatType(10000.0)))) == FloatType(0.0));
-	CHECK(scalar_cast(quat_get_y(quat_set(FloatType(0.0), FloatType(2.34), FloatType(-3.12), FloatType(10000.0)))) == FloatType(2.34));
-	CHECK(scalar_cast(quat_get_z(quat_set(FloatType(0.0), FloatType(2.34), FloatType(-3.12), FloatType(10000.0)))) == FloatType(-3.12));
-	CHECK(scalar_cast(quat_get_w(quat_set(FloatType(0.0), FloatType(2.34), FloatType(-3.12), FloatType(10000.0)))) == FloatType(10000.0));
+	CHECK(scalar_cast(quat_get_x_as_scalar(quat_set(FloatType(0.0), FloatType(2.34), FloatType(-3.12), FloatType(10000.0)))) == FloatType(0.0));
+	CHECK(scalar_cast(quat_get_y_as_scalar(quat_set(FloatType(0.0), FloatType(2.34), FloatType(-3.12), FloatType(10000.0)))) == FloatType(2.34));
+	CHECK(scalar_cast(quat_get_z_as_scalar(quat_set(FloatType(0.0), FloatType(2.34), FloatType(-3.12), FloatType(10000.0)))) == FloatType(-3.12));
+	CHECK(scalar_cast(quat_get_w_as_scalar(quat_set(FloatType(0.0), FloatType(2.34), FloatType(-3.12), FloatType(10000.0)))) == FloatType(10000.0));
 
 	CHECK(FloatType(quat_get_x(identity)) == FloatType(0.0));
 	CHECK(FloatType(quat_get_y(identity)) == FloatType(0.0));
@@ -167,7 +198,8 @@ static void test_quat_impl(const FloatType threshold)
 			uint8_t padding1[8];	// 32 | 48
 		};
 
-		Tmp tmp = { { 0 }, { FloatType(0.0), FloatType(2.34), FloatType(-3.12), FloatType(10000.0) }, {} };
+		// The destination holds other values, thus a store that does nothing fails
+		Tmp tmp = { { 0 }, { FloatType(-1.0), FloatType(-1.0), FloatType(-1.0), FloatType(-1.0) }, {} };
 		quat_store(quat_set(FloatType(0.0), FloatType(2.34), FloatType(-3.12), FloatType(10000.0)), &tmp.values[0]);
 		CHECK(tmp.values[0] == FloatType(0.0));
 		CHECK(tmp.values[1] == FloatType(2.34));
@@ -192,23 +224,44 @@ static void test_quat_impl(const FloatType threshold)
 	{
 		QuatType quat = quat_from_euler(scalar_deg_to_rad(FloatType(30.0)), scalar_deg_to_rad(FloatType(-45.0)), scalar_deg_to_rad(FloatType(90.0)));
 		QuatType quat_conj = quat_conjugate(quat);
-		CHECK(FloatType(quat_get_x(quat_conj)) == -FloatType(quat_get_x(quat)));
-		CHECK(FloatType(quat_get_y(quat_conj)) == -FloatType(quat_get_y(quat)));
-		CHECK(FloatType(quat_get_z(quat_conj)) == -FloatType(quat_get_z(quat)));
-		CHECK(FloatType(quat_get_w(quat_conj)) == FloatType(quat_get_w(quat)));
+		QuatType quat_conj_scalar = quat_set(-FloatType(quat_get_x(quat)), -FloatType(quat_get_y(quat)), -FloatType(quat_get_z(quat)), FloatType(quat_get_w(quat)));
+		CHECK(quat_near_equal(quat_conj, quat_conj_scalar, threshold));
+	}
+
+	{
+		QuatType quat0 = quat_from_euler(scalar_deg_to_rad(FloatType(30.0)), scalar_deg_to_rad(FloatType(-45.0)), scalar_deg_to_rad(FloatType(90.0)));
+		QuatType quat1 = quat_from_euler(scalar_deg_to_rad(FloatType(45.0)), scalar_deg_to_rad(FloatType(60.0)), scalar_deg_to_rad(FloatType(120.0)));
+		QuatType result = quat_add(quat0, quat1);
+		QuatType result_ref = quat_add_scalar<QuatType, FloatType>(quat0, quat1);
+		CHECK(quat_near_equal(result, result_ref, threshold));
 	}
 
 	{
 		QuatType quat0 = quat_from_euler(scalar_deg_to_rad(FloatType(30.0)), scalar_deg_to_rad(FloatType(-45.0)), scalar_deg_to_rad(FloatType(90.0)));
 		QuatType quat1 = quat_from_euler(scalar_deg_to_rad(FloatType(45.0)), scalar_deg_to_rad(FloatType(60.0)), scalar_deg_to_rad(FloatType(120.0)));
 		QuatType result = quat_mul(quat0, quat1);
-		QuatType result_ref = quat_mul_scalar<QuatType, Vector4Type, FloatType>(quat0, quat1);
+		QuatType result_ref = quat_mul_scalar<QuatType, FloatType>(quat0, quat1);
 		CHECK(quat_near_equal(result, result_ref, threshold));
 
 		quat0 = quat_set(FloatType(0.39564531008956383), FloatType(0.044254239301713752), FloatType(0.22768840967675355), FloatType(0.88863059760894492));
 		quat1 = quat_set(FloatType(1.0), FloatType(0.0), FloatType(0.0), FloatType(0.0));
 		result = quat_mul(quat0, quat1);
-		result_ref = quat_mul_scalar<QuatType, Vector4Type, FloatType>(quat0, quat1);
+		result_ref = quat_mul_scalar<QuatType, FloatType>(quat0, quat1);
+		CHECK(quat_near_equal(result, result_ref, threshold));
+	}
+
+	{
+		QuatType quat0 = quat_from_euler(scalar_deg_to_rad(FloatType(30.0)), scalar_deg_to_rad(FloatType(-45.0)), scalar_deg_to_rad(FloatType(90.0)));
+		QuatType result = quat_mul(quat0, FloatType(123.13));
+		QuatType result_ref = quat_mul_scalar<QuatType, FloatType>(quat0, FloatType(123.13));
+		CHECK(quat_near_equal(result, result_ref, threshold));
+
+		result = quat_mul(quat0, scalar_set(FloatType(123.13)));
+		CHECK(quat_near_equal(result, result_ref, threshold));
+
+		// The other lanes of the scalar have different values. The function must use only lane 0.
+		const Vector4Type scalar_lanes = vector_set(FloatType(123.13), FloatType(2.0), FloatType(3.0), FloatType(4.0));
+		result = quat_mul(quat0, vector_get_x_as_scalar(scalar_lanes));
 		CHECK(quat_near_equal(result, result_ref, threshold));
 	}
 
@@ -282,7 +335,7 @@ static void test_quat_impl(const FloatType threshold)
 		const FloatType scalar_dot_result = scalar_dot<QuatType, FloatType>(test_value10, test_value11);
 		const FloatType quat_dot_result = quat_dot(test_value10, test_value11);
 		CHECK(scalar_near_equal(quat_dot_result, scalar_dot_result, threshold));
-		const ScalarType quat_sdot_result = quat_dot(test_value10, test_value11);
+		const ScalarType quat_sdot_result = quat_dot_as_scalar(test_value10, test_value11);
 		CHECK(scalar_near_equal(scalar_cast(quat_sdot_result), scalar_dot_result, threshold));
 	}
 
@@ -291,11 +344,11 @@ static void test_quat_impl(const FloatType threshold)
 		Vector4Type vec = quat_to_vector(quat);
 
 		CHECK(scalar_near_equal(FloatType(quat_length_squared(quat)), FloatType(vector_length_squared(vec)), threshold));
-		CHECK(scalar_near_equal(scalar_cast(quat_length_squared(quat)), scalar_cast(vector_length_squared(vec)), threshold));
+		CHECK(scalar_near_equal(scalar_cast(quat_length_squared_as_scalar(quat)), scalar_cast(vector_length_squared_as_scalar(vec)), threshold));
 		CHECK(scalar_near_equal(FloatType(quat_length(quat)), FloatType(vector_length(vec)), threshold));
-		CHECK(scalar_near_equal(scalar_cast(quat_length(quat)), scalar_cast(vector_length(vec)), threshold));
+		CHECK(scalar_near_equal(scalar_cast(quat_length_as_scalar(quat)), scalar_cast(vector_length_as_scalar(vec)), threshold));
 		CHECK(scalar_near_equal(FloatType(quat_length_reciprocal(quat)), FloatType(vector_length_reciprocal(vec)), threshold));
-		CHECK(scalar_near_equal(scalar_cast(quat_length_reciprocal(quat)), scalar_cast(vector_length_reciprocal(vec)), threshold));
+		CHECK(scalar_near_equal(scalar_cast(quat_length_reciprocal_as_scalar(quat)), scalar_cast(vector_length_reciprocal_as_scalar(vec)), threshold));
 	}
 
 	{
@@ -311,7 +364,7 @@ static void test_quat_impl(const FloatType threshold)
 	{
 		// Stored as doubles: quat_set(-0.001138, 0.91623, -1.624598, 0.715671)
 		const std::array<uint64_t, 4> raw_quat = { { 0xBF52A51E321A2E7FULL, 0x3FED51C193B3A68BULL, 0xBFF9FE5A78F25A25ULL, 0x3FE6E6C6DE76427CULL } };
-		const double* raw_quat_ = reinterpret_cast<const double*>(raw_quat.data());
+		const double* raw_quat_ = rtm_impl::bit_cast<const double*>(raw_quat.data());
 		QuatType quat = quat_set(FloatType(raw_quat_[0]), FloatType(raw_quat_[1]), FloatType(raw_quat_[2]), FloatType(raw_quat_[3]));
 
 		const std::array<uint64_t, 4> raw_result32 = { { 0xBA15540FULL, 0x3EEAD1D9ULL, 0xBF502EF0ULL, 0x3EB76B2CULL } };
@@ -322,10 +375,10 @@ static void test_quat_impl(const FloatType threshold)
 		CHECK(quat_is_normalized(quat_normalize_result));
 
 		std::array<uint64_t, 4> result = { { 0, 0, 0, 0 } };
-		std::memcpy(&result[0], reinterpret_cast<const uint8_t*>(&quat_normalize_result) + (0 * sizeof(FloatType)), sizeof(FloatType));
-		std::memcpy(&result[1], reinterpret_cast<const uint8_t*>(&quat_normalize_result) + (1 * sizeof(FloatType)), sizeof(FloatType));
-		std::memcpy(&result[2], reinterpret_cast<const uint8_t*>(&quat_normalize_result) + (2 * sizeof(FloatType)), sizeof(FloatType));
-		std::memcpy(&result[3], reinterpret_cast<const uint8_t*>(&quat_normalize_result) + (3 * sizeof(FloatType)), sizeof(FloatType));
+		std::memcpy(&result[0], rtm_impl::bit_cast<const uint8_t*>(&quat_normalize_result) + (0 * sizeof(FloatType)), sizeof(FloatType));
+		std::memcpy(&result[1], rtm_impl::bit_cast<const uint8_t*>(&quat_normalize_result) + (1 * sizeof(FloatType)), sizeof(FloatType));
+		std::memcpy(&result[2], rtm_impl::bit_cast<const uint8_t*>(&quat_normalize_result) + (2 * sizeof(FloatType)), sizeof(FloatType));
+		std::memcpy(&result[3], rtm_impl::bit_cast<const uint8_t*>(&quat_normalize_result) + (3 * sizeof(FloatType)), sizeof(FloatType));
 
 		CHECK(result[0] == raw_expected_result[0]);
 		CHECK(result[1] == raw_expected_result[1]);
@@ -396,6 +449,31 @@ static void test_quat_impl(const FloatType threshold)
 
 		CHECK(vector_all_near_equal(quat_to_vector(result1), quat_to_vector(result_ref), threshold));
 		CHECK(vector_all_near_equal(quat_to_vector(result1_s), quat_to_vector(result_ref), threshold));
+	}
+
+	// Slerp of equal or nearly equal rotations
+	{
+		const QuatType quat0 = quat_normalize(quat_from_euler(scalar_deg_to_rad(FloatType(45.0)), scalar_deg_to_rad(FloatType(60.0)), scalar_deg_to_rad(FloatType(120.0))));
+		const FloatType alpha = FloatType(0.33);
+
+		// The angle is zero: the result is the input, for the same quaternion and for the negated quaternion
+		CHECK(quat_is_finite(quat_slerp(quat0, quat0, alpha)));
+		CHECK(vector_all_near_equal(quat_to_vector(quat_slerp(quat0, quat0, alpha)), quat_to_vector(quat0), threshold));
+		CHECK(vector_all_near_equal(quat_to_vector(quat_slerp(quat0, quat0, scalar_set(alpha))), quat_to_vector(quat0), threshold));
+		CHECK(vector_all_near_equal(quat_to_vector(quat_slerp(quat0, quat_neg(quat0), alpha)), quat_to_vector(quat0), threshold));
+
+		// For small angles, the result is the rotation of alpha * angle
+		// Before, the computation of sin(half_angle) lost precision and the float32 error was 3.0E-5 for the angle 0.0336
+		const Vector4Type axis = vector_normalize3(vector_set(FloatType(1.0), FloatType(2.0), FloatType(3.0)));
+		const FloatType small_angles[] = { FloatType(0.0336), FloatType(0.002), FloatType(1.0E-5) };
+		for (const FloatType small_angle : small_angles)
+		{
+			INFO("The angle is " << small_angle);
+			const QuatType quat1 = quat_mul(quat_from_axis_angle(axis, small_angle), quat0);
+			const QuatType ref = quat_mul(quat_from_axis_angle(axis, small_angle * alpha), quat0);
+			CHECK(vector_all_near_equal(quat_to_vector(quat_slerp(quat0, quat1, alpha)), quat_to_vector(ref), FloatType(1.0E-6)));
+			CHECK(vector_all_near_equal(quat_to_vector(quat_slerp(quat0, quat1, scalar_set(alpha))), quat_to_vector(ref), FloatType(1.0E-6)));
+		}
 	}
 
 	{
@@ -498,12 +576,37 @@ static void test_quat_impl(const FloatType threshold)
 		CHECK(quat_near_equal(identity, quat_set(FloatType(0.0), FloatType(0.0), FloatType(0.0), FloatType(2.0)), FloatType(1.0001)) == true);
 		CHECK(quat_near_equal(identity, quat_set(FloatType(0.0), FloatType(0.0), FloatType(0.0), FloatType(2.0)), FloatType(1.0)) == true);
 		CHECK(quat_near_equal(identity, quat_set(FloatType(0.0), FloatType(0.0), FloatType(0.0), FloatType(2.0)), FloatType(0.9999)) == false);
+
+		// Each lane must decide the result alone
+		CHECK(quat_near_equal(identity, quat_set(FloatType(1.0), FloatType(0.0), FloatType(0.0), FloatType(1.0)), FloatType(0.5)) == false);
+		CHECK(quat_near_equal(identity, quat_set(FloatType(0.0), FloatType(1.0), FloatType(0.0), FloatType(1.0)), FloatType(0.5)) == false);
+		CHECK(quat_near_equal(identity, quat_set(FloatType(0.0), FloatType(0.0), FloatType(1.0), FloatType(1.0)), FloatType(0.5)) == false);
+		CHECK(quat_near_equal(identity, quat_set(FloatType(0.0), FloatType(0.0), FloatType(0.0), FloatType(0.0)), FloatType(0.5)) == false);
 	}
 
 	{
 		CHECK(quat_near_identity(identity, FloatType(0.0)) == true);
 		CHECK(quat_near_identity(quat_set(FloatType(0.0), FloatType(0.0), FloatType(0.0), FloatType(0.9999999)), FloatType(0.001)) == true);
 		CHECK(quat_near_identity(quat_set(FloatType(0.0), FloatType(0.0), FloatType(0.0), FloatType(0.98)), FloatType(0.001)) == false);
+	}
+
+	{
+		QuatType quat0 = quat_set(FloatType(0.39564531008956383), FloatType(0.044254239301713752), FloatType(0.22768840967675355), FloatType(0.88863059760894492));
+		QuatType quat1 = identity;
+
+		MaskType all_true = mask_true();
+		MaskType all_false = mask_false();
+
+		CHECK(quat_are_equal(quat_select(all_true, quat0, quat1), quat0));
+		CHECK(quat_are_equal(quat_select(all_false, quat0, quat1), quat1));
+
+		// A mask with different lanes, thus each lane must select its own input
+		const MaskType mixed_mask = mask_set(true, false, false, true);
+		const QuatType mixed_result = quat_select(mixed_mask, quat0, quat1);
+		CHECK(FloatType(quat_get_x(mixed_result)) == FloatType(quat_get_x(quat0)));
+		CHECK(FloatType(quat_get_y(mixed_result)) == FloatType(quat_get_y(quat1)));
+		CHECK(FloatType(quat_get_z(mixed_result)) == FloatType(quat_get_z(quat1)));
+		CHECK(FloatType(quat_get_w(mixed_result)) == FloatType(quat_get_w(quat0)));
 	}
 }
 
@@ -517,6 +620,15 @@ TEST_CASE("quatf math", "[math][quat]")
 	CHECK(scalar_near_equal(double(quat_get_y(dst)), 0.044254239301713752, 1.0E-6));
 	CHECK(scalar_near_equal(double(quat_get_z(dst)), 0.22768840967675355, 1.0E-6));
 	CHECK(scalar_near_equal(double(quat_get_w(dst)), 0.88863059760894492, 1.0E-6));
+
+	{
+		// The default threshold uses an error threshold of 1.0E-6 on [w]
+		const quatf identity = quat_identity();
+		CHECK(quat_near_identity(identity) == true);
+		CHECK(quat_near_identity(quat_set(0.0F, 0.0F, 0.0F, 0.9999999F)) == true);
+		CHECK(quat_near_identity(quat_set(0.0F, 0.0F, 0.0F, -0.9999999F)) == true);
+		CHECK(quat_near_identity(quat_set(0.0F, 0.0F, 0.0F, 0.99999F)) == false);
+	}
 }
 
 TEST_CASE("quatd math", "[math][quat]")
@@ -529,4 +641,22 @@ TEST_CASE("quatd math", "[math][quat]")
 	CHECK(scalar_near_equal(float(quat_get_y(dst)), 0.044254239301713752F, 1.0E-6F));
 	CHECK(scalar_near_equal(float(quat_get_z(dst)), 0.22768840967675355F, 1.0E-6F));
 	CHECK(scalar_near_equal(float(quat_get_w(dst)), 0.88863059760894492F, 1.0E-6F));
+
+	{
+		// The default threshold uses an error threshold of 1.0E-14 on [w]
+		const quatd identity = quat_identity();
+		CHECK(quat_near_identity(identity) == true);
+		CHECK(quat_near_identity(quat_set(0.0, 0.0, 0.0, 1.0 - 1.0E-15)) == true);
+		CHECK(quat_near_identity(quat_set(0.0, 0.0, 0.0, -(1.0 - 1.0E-15))) == true);
+		CHECK(quat_near_identity(quat_set(0.0, 0.0, 0.0, 1.0 - 1.0E-13)) == false);
+
+		const vector4d x_axis = vector_set(1.0, 0.0, 0.0);
+		CHECK(quat_near_identity(quat_from_axis_angle(x_axis, 1.0E-7)) == true);
+		CHECK(quat_near_identity(quat_from_axis_angle(x_axis, 1.0E-6)) == false);
+
+		// A quatd with float32 precision needs the float32 threshold
+		const quatd from_float = quat_cast(quat_set(0.0F, 0.0F, 0.0F, 0.9999999F));
+		CHECK(quat_near_identity(from_float) == false);
+		CHECK(quat_near_identity(from_float, 0.00284714461) == true);
+	}
 }

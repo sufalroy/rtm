@@ -49,7 +49,7 @@ RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_NOINLINE bool RTM_SIMD_CALL mask_any
     // cset   w0, ne
     // ret
 
-	uint32x4_t mask = veorq_u32(vreinterpretq_u32_f32(lhs), vreinterpretq_u32_f32(rhs));
+	uint32x4_t mask = veorq_u32(lhs, rhs);
 	uint16x4_t truncated_mask = vmovn_u32(mask);
 	return (vget_lane_u64(vreinterpret_u64_u16(truncated_mask), 0) & 0x0000FFFFFFFFFFFFULL) != 0x0000FFFFFFFFFFFFULL;
 }
@@ -65,7 +65,7 @@ RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_NOINLINE bool RTM_SIMD_CALL mask_any
     // cset   w0, ne
     // ret
 
-	uint32x4_t mask = veorq_u32(vreinterpretq_u32_f32(lhs), vreinterpretq_u32_f32(rhs));
+	uint32x4_t mask = veorq_u32(lhs, rhs);
 	uint16x4_t truncated_mask = vmovn_u32(mask);
 	return (~vget_lane_u64(vreinterpret_u64_u16(truncated_mask), 0) << 16) != 0;
 }
@@ -85,6 +85,12 @@ static void bm_mask_any_equal3_scalar4f(benchmark::State& state)
 
 	for (auto _ : state)
 	{
+		// The inputs do not change: hide them from the compiler, otherwise it can move the calls out of the loop
+		benchmark::DoNotOptimize(m0);
+		benchmark::DoNotOptimize(m1);
+		benchmark::DoNotOptimize(m2);
+		benchmark::DoNotOptimize(m3);
+
 		r0 ^= mask_any_equal3_scalar4f(m0, m1);
 		r1 ^= mask_any_equal3_scalar4f(m1, m2);
 		r2 ^= mask_any_equal3_scalar4f(m2, m3);
@@ -114,6 +120,12 @@ static void bm_mask_any_equal3_ref(benchmark::State& state)
 
 	for (auto _ : state)
 	{
+		// The inputs do not change: hide them from the compiler, otherwise it can move the calls out of the loop
+		benchmark::DoNotOptimize(m0);
+		benchmark::DoNotOptimize(m1);
+		benchmark::DoNotOptimize(m2);
+		benchmark::DoNotOptimize(m3);
+
 		r0 ^= mask_any_equal3_ref(m0, m1);
 		r1 ^= mask_any_equal3_ref(m1, m2);
 		r2 ^= mask_any_equal3_ref(m2, m3);
@@ -142,6 +154,12 @@ static void bm_mask_any_equal3_shl(benchmark::State& state)
 
 	for (auto _ : state)
 	{
+		// The inputs do not change: hide them from the compiler, otherwise it can move the calls out of the loop
+		benchmark::DoNotOptimize(m0);
+		benchmark::DoNotOptimize(m1);
+		benchmark::DoNotOptimize(m2);
+		benchmark::DoNotOptimize(m3);
+
 		r0 ^= mask_any_equal3_shl(m0, m1);
 		r1 ^= mask_any_equal3_shl(m1, m2);
 		r2 ^= mask_any_equal3_shl(m2, m3);

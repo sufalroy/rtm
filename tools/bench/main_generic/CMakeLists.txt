@@ -1,7 +1,4 @@
-cmake_minimum_required (VERSION 3.2)
 project(rtm_bench CXX)
-
-set(CMAKE_CXX_STANDARD 11)
 
 # Google Benchmark
 set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "No need to run benchmark's tests" FORCE)

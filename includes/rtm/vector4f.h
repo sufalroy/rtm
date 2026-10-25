@@ -29,10 +29,15 @@
 #include "rtm/math.h"
 #include "rtm/scalarf.h"
 #include "rtm/version.h"
+#include "rtm/impl/bit_cast.impl.h"
 #include "rtm/impl/compiler_utils.h"
+#include "rtm/impl/exp_log_common.h"
 #include "rtm/impl/macros.mask4.impl.h"
 #include "rtm/impl/memory_utils.h"
 #include "rtm/impl/vector_common.h"
+
+#include <cstring>
+#include <limits>
 
 RTM_IMPL_FILE_PRAGMA_PUSH
 
@@ -41,17 +46,18 @@ namespace rtm
 	RTM_IMPL_VERSION_NAMESPACE_BEGIN
 
 	//////////////////////////////////////////////////////////////////////////
-	// Setters, getters, and casts
+	/// \name Setters, getters, and casts
+	/// \{
 	//////////////////////////////////////////////////////////////////////////
 
 
-	//////////////////////////////////////////////////////////////////////////
-	// Loads an unaligned vector4 from memory.
-	//////////////////////////////////////////////////////////////////////////
+	/// Loads an unaligned vector4 from memory.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_load(const float* input) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		return _mm_loadu_ps(input);
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_v128_load(input);
 #elif defined(RTM_NEON_INTRINSICS)
 		return vld1q_f32(input);
 #else
@@ -59,13 +65,13 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Loads an input scalar from memory into the [x] component and sets the [yzw] components to zero.
-	//////////////////////////////////////////////////////////////////////////
+	/// Loads an input scalar from memory into the [x] component and sets the [yzw] components to zero.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_load1(const float* input) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		return _mm_load_ss(input);
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_v128_load32_zero(input);
 #elif defined(RTM_NEON_INTRINSICS)
 		return vld1q_lane_f32(input, vdupq_n_f32(0.0F), 0);
 #else
@@ -73,29 +79,46 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Loads an unaligned vector2 from memory and sets the [zw] components to zero.
-	//////////////////////////////////////////////////////////////////////////
+	/// Loads an unaligned vector2 from memory and sets the [zw] components to zero.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_load2(const float* input) RTM_NO_EXCEPT
 	{
+#if defined(RTM_SSE2_INTRINSICS)
+		return _mm_castpd_ps(_mm_load_sd(rtm_impl::bit_cast<const double*>(input)));
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_v128_load64_zero(input);
+#elif defined(RTM_NEON_INTRINSICS)
+		const float32x2_t xy = vld1_f32(input);
+		return vcombine_f32(xy, vdup_n_f32(0.0F));
+#else
 		return vector_set(input[0], input[1], 0.0F, 0.0F);
+#endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Loads an unaligned vector3 from memory and sets the [w] component to zero.
-	//////////////////////////////////////////////////////////////////////////
+	/// Loads an unaligned vector3 from memory and sets the [w] component to zero.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_load3(const float* input) RTM_NO_EXCEPT
 	{
+#if defined(RTM_SSE2_INTRINSICS)
+		const __m128 xy = _mm_castpd_ps(_mm_load_sd(rtm_impl::bit_cast<const double*>(input)));
+		const __m128 z = _mm_load_ss(input + 2);
+		return _mm_movelh_ps(xy, z);
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_v128_load32_lane(input + 2, wasm_v128_load64_zero(input), 2);
+#elif defined(RTM_NEON_INTRINSICS)
+		const float32x2_t xy = vld1_f32(input);
+		const float32x2_t z = vld1_lane_f32(input + 2, vdup_n_f32(0.0F), 0);
+		return vcombine_f32(xy, z);
+#else
 		return vector_set(input[0], input[1], input[2], 0.0F);
+#endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Loads an unaligned vector4 from memory.
-	//////////////////////////////////////////////////////////////////////////
+	/// Loads an unaligned vector4 from memory.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_load(const float4f* input) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		return _mm_loadu_ps(&input->x);
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_v128_load(&input->x);
 #elif defined(RTM_NEON_INTRINSICS)
 		return vld1q_f32(&input->x);
 #else
@@ -103,31 +126,48 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Loads an unaligned vector2 from memory and sets the [zw] components to zero.
-	//////////////////////////////////////////////////////////////////////////
+	/// Loads an unaligned vector2 from memory and sets the [zw] components to zero.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_load2(const float2f* input) RTM_NO_EXCEPT
 	{
+#if defined(RTM_SSE2_INTRINSICS)
+		return _mm_castpd_ps(_mm_load_sd(rtm_impl::bit_cast<const double*>(&input->x)));
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_v128_load64_zero(&input->x);
+#elif defined(RTM_NEON_INTRINSICS)
+		const float32x2_t xy = vld1_f32(&input->x);
+		return vcombine_f32(xy, vdup_n_f32(0.0F));
+#else
 		return vector_set(input->x, input->y, 0.0F, 0.0F);
+#endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Loads an unaligned vector3 from memory and sets the [w] component to zero.
-	//////////////////////////////////////////////////////////////////////////
+	/// Loads an unaligned vector3 from memory and sets the [w] component to zero.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_load3(const float3f* input) RTM_NO_EXCEPT
 	{
+#if defined(RTM_SSE2_INTRINSICS)
+		const __m128 xy = _mm_castpd_ps(_mm_load_sd(rtm_impl::bit_cast<const double*>(&input->x)));
+		const __m128 z = _mm_load_ss(&input->z);
+		return _mm_movelh_ps(xy, z);
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_v128_load32_lane(&input->z, wasm_v128_load64_zero(&input->x), 2);
+#elif defined(RTM_NEON_INTRINSICS)
+		const float32x2_t xy = vld1_f32(&input->x);
+		const float32x2_t z = vld1_lane_f32(&input->z, vdup_n_f32(0.0F), 0);
+		return vcombine_f32(xy, z);
+#else
 		return vector_set(input->x, input->y, input->z, 0.0F);
+#endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Loads an input scalar from memory into the [xyzw] components.
-	//////////////////////////////////////////////////////////////////////////
+	/// Loads an input scalar from memory into the [xyzw] components.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_broadcast(const float* input) RTM_NO_EXCEPT
 	{
 #if defined(RTM_AVX_INTRINSICS)
 		return _mm_broadcast_ss(input);
 #elif defined(RTM_SSE2_INTRINSICS)
 		return _mm_load_ps1(input);
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_v128_load32_splat(input);
 #elif defined(RTM_NEON_INTRINSICS)
 		return vld1q_dup_f32(input);
 #else
@@ -135,25 +175,27 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Casts a quaternion to a vector4.
-	//////////////////////////////////////////////////////////////////////////
+	/// Casts a quaternion to a vector4.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL quat_to_vector(quatf_arg0 input) RTM_NO_EXCEPT
 	{
-#if defined(RTM_SSE2_INTRINSICS) || defined(RTM_NEON_INTRINSICS)
+#if defined(RTM_SSE2_INTRINSICS) || defined(RTM_NEON_INTRINSICS) || defined(RTM_WASM128_INTRINSICS)
 		return input;
 #else
 		return vector4f{ input.x, input.y, input.z, input.w };
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Casts a vector4 float64 variant to a float32 variant.
-	//////////////////////////////////////////////////////////////////////////
-	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_cast(const vector4d& input) RTM_NO_EXCEPT
+	/// Casts a vector4 float64 variant to a float32 variant.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_cast(vector4d_arg0 input) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
-		return _mm_shuffle_ps(_mm_cvtpd_ps(input.xy), _mm_cvtpd_ps(input.zw), _MM_SHUFFLE(1, 0, 1, 0));
+		// Do not use _mm_shuffle_ps here. MSVC 19.34 to 19.44 removes the shuffle when [xy] and [zw]
+		// are the same constant, and the [zw] result is then 0.
+		return _mm_movelh_ps(_mm_cvtpd_ps(input.xy), _mm_cvtpd_ps(input.zw));
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_i32x4_shuffle(wasm_f32x4_demote_f64x2_zero(input.xy), wasm_f32x4_demote_f64x2_zero(input.zw), 0, 1, 4, 5);
+#elif defined(RTM_NEON64_INTRINSICS)
+		return vcvt_high_f32_f64(vcvt_f32_f64(input.xy), input.zw);
 #else
 		return vector_set(float(input.x), float(input.y), float(input.z), float(input.w));
 #endif
@@ -161,18 +203,18 @@ namespace rtm
 
 	namespace rtm_impl
 	{
-		//////////////////////////////////////////////////////////////////////////
 		// This is a helper struct to allow a single consistent API between
 		// various vector types when the semantics are identical but the return
 		// type differs. Implicit coercion is used to return the desired value
 		// at the call site.
-		//////////////////////////////////////////////////////////////////////////
 		struct vector4f_vector_get_x
 		{
 			RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE RTM_SIMD_CALL operator float() const RTM_NO_EXCEPT
 			{
 #if defined(RTM_SSE2_INTRINSICS)
 				return _mm_cvtss_f32(input);
+#elif defined(RTM_WASM128_INTRINSICS)
+				return wasm_f32x4_extract_lane(input, 0);
 #elif defined(RTM_NEON_INTRINSICS)
 				return vgetq_lane_f32(input, 0);
 #else
@@ -180,39 +222,40 @@ namespace rtm
 #endif
 			}
 
-#if defined(RTM_SSE2_INTRINSICS)
-			RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE RTM_SIMD_CALL operator scalarf() const RTM_NO_EXCEPT
-			{
-				return scalarf{ input };
-			}
-#endif
-
 			vector4f input;
 		};
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns the vector4 [x] component.
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns the vector4 [x] component.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE constexpr rtm_impl::vector4f_vector_get_x RTM_SIMD_CALL vector_get_x(vector4f_arg0 input) RTM_NO_EXCEPT
 	{
 		return rtm_impl::vector4f_vector_get_x{ input };
 	}
 
+	/// Returns the vector4 [x] component.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE scalarf RTM_SIMD_CALL vector_get_x_as_scalar(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+#if defined(RTM_SSE2_INTRINSICS)
+		return scalarf{ input };
+#else
+		return vector_get_x(input);
+#endif
+	}
+
 	namespace rtm_impl
 	{
-		//////////////////////////////////////////////////////////////////////////
 		// This is a helper struct to allow a single consistent API between
 		// various vector types when the semantics are identical but the return
 		// type differs. Implicit coercion is used to return the desired value
 		// at the call site.
-		//////////////////////////////////////////////////////////////////////////
 		struct vector4f_vector_get_y
 		{
 			RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE RTM_SIMD_CALL operator float() const RTM_NO_EXCEPT
 			{
 #if defined(RTM_SSE2_INTRINSICS)
 				return _mm_cvtss_f32(_mm_shuffle_ps(input, input, _MM_SHUFFLE(1, 1, 1, 1)));
+#elif defined(RTM_WASM128_INTRINSICS)
+				return wasm_f32x4_extract_lane(input, 1);
 #elif defined(RTM_NEON_INTRINSICS)
 				return vgetq_lane_f32(input, 1);
 #else
@@ -220,39 +263,40 @@ namespace rtm
 #endif
 			}
 
-#if defined(RTM_SSE2_INTRINSICS)
-			RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE RTM_SIMD_CALL operator scalarf() const RTM_NO_EXCEPT
-			{
-				return scalarf{ _mm_shuffle_ps(input, input, _MM_SHUFFLE(1, 1, 1, 1)) };
-			}
-#endif
-
 			vector4f input;
 		};
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns the vector4 [y] component.
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns the vector4 [y] component.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE constexpr rtm_impl::vector4f_vector_get_y RTM_SIMD_CALL vector_get_y(vector4f_arg0 input) RTM_NO_EXCEPT
 	{
 		return rtm_impl::vector4f_vector_get_y{ input };
 	}
 
+	/// Returns the vector4 [y] component.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE scalarf RTM_SIMD_CALL vector_get_y_as_scalar(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+#if defined(RTM_SSE2_INTRINSICS)
+		return scalarf{ _mm_shuffle_ps(input, input, _MM_SHUFFLE(1, 1, 1, 1)) };
+#else
+		return vector_get_y(input);
+#endif
+	}
+
 	namespace rtm_impl
 	{
-		//////////////////////////////////////////////////////////////////////////
 		// This is a helper struct to allow a single consistent API between
 		// various vector types when the semantics are identical but the return
 		// type differs. Implicit coercion is used to return the desired value
 		// at the call site.
-		//////////////////////////////////////////////////////////////////////////
 		struct vector4f_vector_get_z
 		{
 			RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE RTM_SIMD_CALL operator float() const RTM_NO_EXCEPT
 			{
 #if defined(RTM_SSE2_INTRINSICS)
 				return _mm_cvtss_f32(_mm_shuffle_ps(input, input, _MM_SHUFFLE(2, 2, 2, 2)));
+#elif defined(RTM_WASM128_INTRINSICS)
+				return wasm_f32x4_extract_lane(input, 2);
 #elif defined(RTM_NEON_INTRINSICS)
 				return vgetq_lane_f32(input, 2);
 #else
@@ -260,39 +304,40 @@ namespace rtm
 #endif
 			}
 
-#if defined(RTM_SSE2_INTRINSICS)
-			RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE RTM_SIMD_CALL operator scalarf() const RTM_NO_EXCEPT
-			{
-				return scalarf{ _mm_shuffle_ps(input, input, _MM_SHUFFLE(2, 2, 2, 2)) };
-			}
-#endif
-
 			vector4f input;
 		};
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns the vector4 [z] component.
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns the vector4 [z] component.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE constexpr rtm_impl::vector4f_vector_get_z RTM_SIMD_CALL vector_get_z(vector4f_arg0 input) RTM_NO_EXCEPT
 	{
 		return rtm_impl::vector4f_vector_get_z{ input };
 	}
 
+	/// Returns the vector4 [z] component.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE scalarf RTM_SIMD_CALL vector_get_z_as_scalar(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+#if defined(RTM_SSE2_INTRINSICS)
+		return scalarf{ _mm_shuffle_ps(input, input, _MM_SHUFFLE(2, 2, 2, 2)) };
+#else
+		return vector_get_z(input);
+#endif
+	}
+
 	namespace rtm_impl
 	{
-		//////////////////////////////////////////////////////////////////////////
 		// This is a helper struct to allow a single consistent API between
 		// various vector types when the semantics are identical but the return
 		// type differs. Implicit coercion is used to return the desired value
 		// at the call site.
-		//////////////////////////////////////////////////////////////////////////
 		struct vector4f_vector_get_w
 		{
 			RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE RTM_SIMD_CALL operator float() const RTM_NO_EXCEPT
 			{
 #if defined(RTM_SSE2_INTRINSICS)
 				return _mm_cvtss_f32(_mm_shuffle_ps(input, input, _MM_SHUFFLE(3, 3, 3, 3)));
+#elif defined(RTM_WASM128_INTRINSICS)
+				return wasm_f32x4_extract_lane(input, 3);
 #elif defined(RTM_NEON_INTRINSICS)
 				return vgetq_lane_f32(input, 3);
 #else
@@ -300,152 +345,236 @@ namespace rtm
 #endif
 			}
 
-#if defined(RTM_SSE2_INTRINSICS)
-			RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE RTM_SIMD_CALL operator scalarf() const RTM_NO_EXCEPT
-			{
-				return scalarf{ _mm_shuffle_ps(input, input, _MM_SHUFFLE(3, 3, 3, 3)) };
-			}
-#endif
-
 			vector4f input;
 		};
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns the vector4 [w] component.
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns the vector4 [w] component.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE constexpr rtm_impl::vector4f_vector_get_w RTM_SIMD_CALL vector_get_w(vector4f_arg0 input) RTM_NO_EXCEPT
 	{
 		return rtm_impl::vector4f_vector_get_w{ input };
 	}
 
+	/// Returns the vector4 [w] component.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE scalarf RTM_SIMD_CALL vector_get_w_as_scalar(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+#if defined(RTM_SSE2_INTRINSICS)
+		return scalarf{ _mm_shuffle_ps(input, input, _MM_SHUFFLE(3, 3, 3, 3)) };
+#else
+		return vector_get_w(input);
+#endif
+	}
+
 	namespace rtm_impl
 	{
-		//////////////////////////////////////////////////////////////////////////
 		// This is a helper struct to allow a single consistent API between
 		// various vector types when the semantics are identical but the return
 		// type differs. Implicit coercion is used to return the desired value
 		// at the call site.
-		//////////////////////////////////////////////////////////////////////////
-		template<mix4 component>
+		template<component4 component>
 		struct vector4f_vector_get_component_static
 		{
 			RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE RTM_SIMD_CALL operator float() const RTM_NO_EXCEPT
 			{
-				const mix4 xyzw = mix4(int(component) % 4);
-				if (rtm_impl::static_condition<xyzw == mix4::x>::test())
-					return vector_get_x(input);
-				else if (rtm_impl::static_condition<xyzw == mix4::y>::test())
-					return vector_get_y(input);
-				else if (rtm_impl::static_condition<xyzw == mix4::z>::test())
-					return vector_get_z(input);
-				else
-					return vector_get_w(input);
+				switch (component)
+				{
+					default:
+					case component4::x:	return vector_get_x(input);
+					case component4::y:	return vector_get_y(input);
+					case component4::z:	return vector_get_z(input);
+					case component4::w:	return vector_get_w(input);
+				}
 			}
-
-#if defined(RTM_SSE2_INTRINSICS)
-			RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE RTM_SIMD_CALL operator scalarf() const RTM_NO_EXCEPT
-			{
-				const mix4 xyzw = mix4(int(component) % 4);
-				if (rtm_impl::static_condition<xyzw == mix4::x>::test())
-					return vector_get_x(input);
-				else if (rtm_impl::static_condition<xyzw == mix4::y>::test())
-					return vector_get_y(input);
-				else if (rtm_impl::static_condition<xyzw == mix4::z>::test())
-					return vector_get_z(input);
-				else
-					return vector_get_w(input);
-			}
-#endif
 
 			vector4f input;
 		};
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns the vector4 desired component.
-	//////////////////////////////////////////////////////////////////////////
-	template<mix4 component>
+	/// Returns the vector2 desired component.
+	template<component2 component, component4 component_ = static_cast<component4>(component)>
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE constexpr rtm_impl::vector4f_vector_get_component_static<component_> RTM_SIMD_CALL vector_get_component2(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+		return rtm_impl::vector4f_vector_get_component_static<component_>{ input };
+	}
+
+	/// Returns the vector2 desired component.
+	template<component2 component>
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE scalarf RTM_SIMD_CALL vector_get_component2_as_scalar(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+		switch (component)
+		{
+			default:
+			case component2::x:	return vector_get_x_as_scalar(input);
+			case component2::y:	return vector_get_y_as_scalar(input);
+		}
+	}
+
+	/// Returns the vector3 desired component.
+	template<component3 component, component4 component_ = static_cast<component4>(component)>
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE constexpr rtm_impl::vector4f_vector_get_component_static<component_> RTM_SIMD_CALL vector_get_component3(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+		return rtm_impl::vector4f_vector_get_component_static<component_>{ input };
+	}
+
+	/// Returns the vector3 desired component.
+	template<component3 component>
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE scalarf RTM_SIMD_CALL vector_get_component3_as_scalar(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+		switch (component)
+		{
+			default:
+			case component3::x:	return vector_get_x_as_scalar(input);
+			case component3::y:	return vector_get_y_as_scalar(input);
+			case component3::z:	return vector_get_z_as_scalar(input);
+		}
+	}
+
+	/// Returns the vector4 desired component.
+	template<component4 component>
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE constexpr rtm_impl::vector4f_vector_get_component_static<component> RTM_SIMD_CALL vector_get_component(vector4f_arg0 input) RTM_NO_EXCEPT
 	{
 		return rtm_impl::vector4f_vector_get_component_static<component>{ input };
 	}
 
+	/// Returns the vector4 desired component.
+	template<component4 component>
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE scalarf RTM_SIMD_CALL vector_get_component_as_scalar(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+		switch (component)
+		{
+			default:
+			case component4::x:	return vector_get_x_as_scalar(input);
+			case component4::y:	return vector_get_y_as_scalar(input);
+			case component4::z:	return vector_get_z_as_scalar(input);
+			case component4::w:	return vector_get_w_as_scalar(input);
+		}
+	}
+
 	namespace rtm_impl
 	{
-		//////////////////////////////////////////////////////////////////////////
 		// This is a helper struct to allow a single consistent API between
 		// various vector types when the semantics are identical but the return
 		// type differs. Implicit coercion is used to return the desired value
 		// at the call site.
-		//////////////////////////////////////////////////////////////////////////
 		struct vector4f_vector_get_component
 		{
 			RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE RTM_SIMD_CALL operator float() const RTM_NO_EXCEPT
 			{
-				const mix4 xyzw = mix4(int(component) % 4);
-				if (xyzw == mix4::x)
-					return vector_get_x(input);
-				else if (xyzw == mix4::y)
-					return vector_get_y(input);
-				else if (xyzw == mix4::z)
-					return vector_get_z(input);
-				else
-					return vector_get_w(input);
+				switch (component)
+				{
+					default:
+					case component4::x:	return vector_get_x(input);
+					case component4::y:	return vector_get_y(input);
+					case component4::z:	return vector_get_z(input);
+					case component4::w:	return vector_get_w(input);
+				}
 			}
-
-#if defined(RTM_SSE2_INTRINSICS)
-			RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE RTM_SIMD_CALL operator scalarf() const RTM_NO_EXCEPT
-			{
-				const mix4 xyzw = mix4(int(component) % 4);
-				if (xyzw == mix4::x)
-					return vector_get_x(input);
-				else if (xyzw == mix4::y)
-					return vector_get_y(input);
-				else if (xyzw == mix4::z)
-					return vector_get_z(input);
-				else
-					return vector_get_w(input);
-			}
-#endif
 
 			vector4f input;
-			mix4 component;
-			int padding[3];
+			component4 component;
+			int32_t padding[3];
 		};
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns the vector4 desired component.
-	//////////////////////////////////////////////////////////////////////////
-	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE constexpr rtm_impl::vector4f_vector_get_component RTM_SIMD_CALL vector_get_component(vector4f_arg0 input, mix4 component) RTM_NO_EXCEPT
+	/// Returns the vector2 desired component.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE constexpr rtm_impl::vector4f_vector_get_component RTM_SIMD_CALL vector_get_component2(vector4f_arg0 input, component2 component) RTM_NO_EXCEPT
+	{
+		return rtm_impl::vector4f_vector_get_component{ input, static_cast<component4>(component), { 0 } };
+	}
+
+	/// Returns the vector2 desired component.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE scalarf RTM_SIMD_CALL vector_get_component2_as_scalar(vector4f_arg0 input, component2 component) RTM_NO_EXCEPT
+	{
+		switch (component)
+		{
+			default:
+			case component2::x:	return vector_get_x_as_scalar(input);
+			case component2::y:	return vector_get_y_as_scalar(input);
+		}
+	}
+
+	/// Returns the vector3 desired component.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE constexpr rtm_impl::vector4f_vector_get_component RTM_SIMD_CALL vector_get_component3(vector4f_arg0 input, component3 component) RTM_NO_EXCEPT
+	{
+		return rtm_impl::vector4f_vector_get_component{ input, static_cast<component4>(component), { 0 } };
+	}
+
+	/// Returns the vector3 desired component.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE scalarf RTM_SIMD_CALL vector_get_component3_as_scalar(vector4f_arg0 input, component3 component) RTM_NO_EXCEPT
+	{
+		switch (component)
+		{
+			default:
+			case component3::x:	return vector_get_x_as_scalar(input);
+			case component3::y:	return vector_get_y_as_scalar(input);
+			case component3::z:	return vector_get_z_as_scalar(input);
+		}
+	}
+
+	/// Returns the vector4 desired component.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE constexpr rtm_impl::vector4f_vector_get_component RTM_SIMD_CALL vector_get_component(vector4f_arg0 input, component4 component) RTM_NO_EXCEPT
 	{
 		return rtm_impl::vector4f_vector_get_component{ input, component, { 0 } };
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns the smallest component in the input vector as a scalar.
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns the vector4 desired component.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE scalarf RTM_SIMD_CALL vector_get_component_as_scalar(vector4f_arg0 input, component4 component) RTM_NO_EXCEPT
+	{
+		switch (component)
+		{
+			default:
+			case component4::x:	return vector_get_x_as_scalar(input);
+			case component4::y:	return vector_get_y_as_scalar(input);
+			case component4::z:	return vector_get_z_as_scalar(input);
+			case component4::w:	return vector_get_w_as_scalar(input);
+		}
+	}
+
+	/// Returns the smallest component in the input vector as a scalar.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE constexpr rtm_impl::vector4f_get_min_component RTM_SIMD_CALL vector_get_min_component(vector4f_arg0 input) RTM_NO_EXCEPT
 	{
 		return rtm_impl::vector4f_get_min_component{ input };
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns the largest component in the input vector as a scalar.
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns the smallest component in the input vector as a scalar.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE scalarf RTM_SIMD_CALL vector_get_min_component_as_scalar(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+#if defined(RTM_SSE2_INTRINSICS)
+		__m128 zwzw = _mm_movehl_ps(input, input);
+		__m128 xz_yw_zz_ww = _mm_min_ps(input, zwzw);
+		__m128 yw_yw_yw_yw = _mm_shuffle_ps(xz_yw_zz_ww, xz_yw_zz_ww, _MM_SHUFFLE(1, 1, 1, 1));
+		return scalarf{ _mm_min_ps(xz_yw_zz_ww, yw_yw_yw_yw) };
+#else
+		return vector_get_min_component(input);
+#endif
+	}
+
+	/// Returns the largest component in the input vector as a scalar.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE constexpr rtm_impl::vector4f_get_max_component RTM_SIMD_CALL vector_get_max_component(vector4f_arg0 input) RTM_NO_EXCEPT
 	{
 		return rtm_impl::vector4f_get_max_component{ input };
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Sets the vector4 [x] component and returns the new value.
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns the largest component in the input vector as a scalar.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE scalarf RTM_SIMD_CALL vector_get_max_component_as_scalar(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+#if defined(RTM_SSE2_INTRINSICS)
+		__m128 zwzw = _mm_movehl_ps(input, input);
+		__m128 xz_yw_zz_ww = _mm_max_ps(input, zwzw);
+		__m128 yw_yw_yw_yw = _mm_shuffle_ps(xz_yw_zz_ww, xz_yw_zz_ww, _MM_SHUFFLE(1, 1, 1, 1));
+		return scalarf{ _mm_max_ps(xz_yw_zz_ww, yw_yw_yw_yw) };
+#else
+		return vector_get_max_component(input);
+#endif
+	}
+
+	/// Sets the vector4 [x] component and returns the new value.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_set_x(vector4f_arg0 input, float lane_value) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		return _mm_move_ss(input, _mm_set_ss(lane_value));
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_f32x4_replace_lane(input, 0, lane_value);
 #elif defined(RTM_NEON_INTRINSICS)
 		return vsetq_lane_f32(lane_value, input, 0);
 #else
@@ -454,18 +583,14 @@ namespace rtm
 	}
 
 #if defined(RTM_SSE2_INTRINSICS)
-	//////////////////////////////////////////////////////////////////////////
-	// Sets the vector4 [x] component and returns the new value.
-	//////////////////////////////////////////////////////////////////////////
+	/// Sets the vector4 [x] component and returns the new value.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_set_x(vector4f_arg0 input, scalarf_arg1 lane_value) RTM_NO_EXCEPT
 	{
 		return _mm_move_ss(input, lane_value.value);
 	}
 #endif
 
-	//////////////////////////////////////////////////////////////////////////
-	// Sets the vector4 [y] component and returns the new value.
-	//////////////////////////////////////////////////////////////////////////
+	/// Sets the vector4 [y] component and returns the new value.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_set_y(vector4f_arg0 input, float lane_value) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE4_INTRINSICS)
@@ -474,6 +599,8 @@ namespace rtm
 		const __m128 yxzw = _mm_shuffle_ps(input, input, _MM_SHUFFLE(3, 2, 0, 1));
 		const __m128 vxzw = _mm_move_ss(yxzw, _mm_set_ss(lane_value));
 		return _mm_shuffle_ps(vxzw, vxzw, _MM_SHUFFLE(3, 2, 0, 1));
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_f32x4_replace_lane(input, 1, lane_value);
 #elif defined(RTM_NEON_INTRINSICS)
 		return vsetq_lane_f32(lane_value, input, 1);
 #else
@@ -482,9 +609,7 @@ namespace rtm
 	}
 
 #if defined(RTM_SSE2_INTRINSICS)
-	//////////////////////////////////////////////////////////////////////////
-	// Sets the vector4 [y] component and returns the new value.
-	//////////////////////////////////////////////////////////////////////////
+	/// Sets the vector4 [y] component and returns the new value.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_set_y(vector4f_arg0 input, scalarf_arg1 lane_value) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE4_INTRINSICS)
@@ -497,9 +622,7 @@ namespace rtm
 	}
 #endif
 
-	//////////////////////////////////////////////////////////////////////////
-	// Sets the vector4 [z] component and returns the new value.
-	//////////////////////////////////////////////////////////////////////////
+	/// Sets the vector4 [z] component and returns the new value.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_set_z(vector4f_arg0 input, float lane_value) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE4_INTRINSICS)
@@ -508,6 +631,8 @@ namespace rtm
 		const __m128 zyxw = _mm_shuffle_ps(input, input, _MM_SHUFFLE(3, 0, 1, 2));
 		const __m128 vyxw = _mm_move_ss(zyxw, _mm_set_ss(lane_value));
 		return _mm_shuffle_ps(vyxw, vyxw, _MM_SHUFFLE(3, 0, 1, 2));
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_f32x4_replace_lane(input, 2, lane_value);
 #elif defined(RTM_NEON_INTRINSICS)
 		return vsetq_lane_f32(lane_value, input, 2);
 #else
@@ -516,9 +641,7 @@ namespace rtm
 	}
 
 #if defined(RTM_SSE2_INTRINSICS)
-	//////////////////////////////////////////////////////////////////////////
-	// Sets the vector4 [z] component and returns the new value.
-	//////////////////////////////////////////////////////////////////////////
+	/// Sets the vector4 [z] component and returns the new value.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_set_z(vector4f_arg0 input, scalarf_arg1 lane_value) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE4_INTRINSICS)
@@ -531,9 +654,7 @@ namespace rtm
 	}
 #endif
 
-	//////////////////////////////////////////////////////////////////////////
-	// Sets the vector4 [w] component and returns the new value.
-	//////////////////////////////////////////////////////////////////////////
+	/// Sets the vector4 [w] component and returns the new value.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_set_w(vector4f_arg0 input, float lane_value) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE4_INTRINSICS)
@@ -542,6 +663,8 @@ namespace rtm
 		const __m128 wyzx = _mm_shuffle_ps(input, input, _MM_SHUFFLE(0, 2, 1, 3));
 		const __m128 vyzx = _mm_move_ss(wyzx, _mm_set_ss(lane_value));
 		return _mm_shuffle_ps(vyzx, vyzx, _MM_SHUFFLE(0, 2, 1, 3));
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_f32x4_replace_lane(input, 3, lane_value);
 #elif defined(RTM_NEON_INTRINSICS)
 		return vsetq_lane_f32(lane_value, input, 3);
 #else
@@ -550,9 +673,7 @@ namespace rtm
 	}
 
 #if defined(RTM_SSE2_INTRINSICS)
-	//////////////////////////////////////////////////////////////////////////
-	// Sets the vector4 [w] component and returns the new value.
-	//////////////////////////////////////////////////////////////////////////
+	/// Sets the vector4 [w] component and returns the new value.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_set_w(vector4f_arg0 input, scalarf_arg1 lane_value) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE4_INTRINSICS)
@@ -565,21 +686,181 @@ namespace rtm
 	}
 #endif
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns a floating point pointer to the vector4 data.
-	//////////////////////////////////////////////////////////////////////////
-	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE const float* RTM_SIMD_CALL vector_to_pointer(const vector4f& input) RTM_NO_EXCEPT
+	/// Sets the desired vector2 component and returns the new value.
+	template<component2 component>
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_set_component2(vector4f_arg0 input, float lane_value) RTM_NO_EXCEPT
 	{
-		return reinterpret_cast<const float*>(&input);
+		switch (component)
+		{
+			default:
+			case component2::x:	return vector_set_x(input, lane_value);
+			case component2::y:	return vector_set_y(input, lane_value);
+		}
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Writes a vector4 to unaligned memory.
-	//////////////////////////////////////////////////////////////////////////
+#if defined(RTM_SSE2_INTRINSICS)
+	/// Sets the desired vector2 component and returns the new value.
+	template<component2 component>
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_set_component2(vector4f_arg0 input, scalarf_arg1 lane_value) RTM_NO_EXCEPT
+	{
+		switch (component)
+		{
+			default:
+			case component2::x:	return vector_set_x(input, lane_value);
+			case component2::y:	return vector_set_y(input, lane_value);
+		}
+	}
+#endif
+
+	/// Sets the desired vector3 component and returns the new value.
+	template<component3 component>
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_set_component3(vector4f_arg0 input, float lane_value) RTM_NO_EXCEPT
+	{
+		switch (component)
+		{
+			default:
+			case component3::x:	return vector_set_x(input, lane_value);
+			case component3::y:	return vector_set_y(input, lane_value);
+			case component3::z:	return vector_set_z(input, lane_value);
+		}
+	}
+
+#if defined(RTM_SSE2_INTRINSICS)
+	/// Sets the desired vector3 component and returns the new value.
+	template<component3 component>
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_set_component3(vector4f_arg0 input, scalarf_arg1 lane_value) RTM_NO_EXCEPT
+	{
+		switch (component)
+		{
+			default:
+			case component3::x:	return vector_set_x(input, lane_value);
+			case component3::y:	return vector_set_y(input, lane_value);
+			case component3::z:	return vector_set_z(input, lane_value);
+		}
+	}
+#endif
+
+	/// Sets the desired vector4 component and returns the new value.
+	template<component4 component>
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_set_component(vector4f_arg0 input, float lane_value) RTM_NO_EXCEPT
+	{
+		switch (component)
+		{
+			default:
+			case component4::x:	return vector_set_x(input, lane_value);
+			case component4::y:	return vector_set_y(input, lane_value);
+			case component4::z:	return vector_set_z(input, lane_value);
+			case component4::w:	return vector_set_w(input, lane_value);
+		}
+	}
+
+#if defined(RTM_SSE2_INTRINSICS)
+	/// Sets the desired vector4 component and returns the new value.
+	template<component4 component>
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_set_component(vector4f_arg0 input, scalarf_arg1 lane_value) RTM_NO_EXCEPT
+	{
+		switch (component)
+		{
+			default:
+			case component4::x:	return vector_set_x(input, lane_value);
+			case component4::y:	return vector_set_y(input, lane_value);
+			case component4::z:	return vector_set_z(input, lane_value);
+			case component4::w:	return vector_set_w(input, lane_value);
+		}
+	}
+#endif
+
+	/// Sets the desired vector2 component and returns the new value.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_set_component2(vector4f_arg0 input, float lane_value, component2 component) RTM_NO_EXCEPT
+	{
+		switch (component)
+		{
+			default:
+			case component2::x:	return vector_set_x(input, lane_value);
+			case component2::y:	return vector_set_y(input, lane_value);
+		}
+	}
+
+#if defined(RTM_SSE2_INTRINSICS)
+	/// Sets the desired vector2 component and returns the new value.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_set_component2(vector4f_arg0 input, scalarf_arg1 lane_value, component2 component) RTM_NO_EXCEPT
+	{
+		switch (component)
+		{
+			default:
+			case component2::x:	return vector_set_x(input, lane_value);
+			case component2::y:	return vector_set_y(input, lane_value);
+		}
+	}
+#endif
+
+	/// Sets the desired vector3 component and returns the new value.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_set_component3(vector4f_arg0 input, float lane_value, component3 component) RTM_NO_EXCEPT
+	{
+		switch (component)
+		{
+			default:
+			case component3::x:	return vector_set_x(input, lane_value);
+			case component3::y:	return vector_set_y(input, lane_value);
+			case component3::z:	return vector_set_z(input, lane_value);
+		}
+	}
+
+#if defined(RTM_SSE2_INTRINSICS)
+	/// Sets the desired vector3 component and returns the new value.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_set_component3(vector4f_arg0 input, scalarf_arg1 lane_value, component3 component) RTM_NO_EXCEPT
+	{
+		switch (component)
+		{
+			default:
+			case component3::x:	return vector_set_x(input, lane_value);
+			case component3::y:	return vector_set_y(input, lane_value);
+			case component3::z:	return vector_set_z(input, lane_value);
+		}
+	}
+#endif
+
+	/// Sets the desired vector4 component and returns the new value.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_set_component(vector4f_arg0 input, float lane_value, component4 component) RTM_NO_EXCEPT
+	{
+		switch (component)
+		{
+			default:
+			case component4::x:	return vector_set_x(input, lane_value);
+			case component4::y:	return vector_set_y(input, lane_value);
+			case component4::z:	return vector_set_z(input, lane_value);
+			case component4::w:	return vector_set_w(input, lane_value);
+		}
+	}
+
+#if defined(RTM_SSE2_INTRINSICS)
+	/// Sets the desired vector4 component and returns the new value.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_set_component(vector4f_arg0 input, scalarf_arg1 lane_value, component4 component) RTM_NO_EXCEPT
+	{
+		switch (component)
+		{
+			default:
+			case component4::x:	return vector_set_x(input, lane_value);
+			case component4::y:	return vector_set_y(input, lane_value);
+			case component4::z:	return vector_set_z(input, lane_value);
+			case component4::w:	return vector_set_w(input, lane_value);
+		}
+	}
+#endif
+
+	/// Returns a floating point pointer to the vector4 data.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE const float* RTM_SIMD_CALL vector_to_pointer(const vector4f& input) RTM_NO_EXCEPT
+	{
+		return rtm_impl::bit_cast<const float*>(&input);
+	}
+
+	/// Writes a vector4 to unaligned memory.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE void RTM_SIMD_CALL vector_store(vector4f_arg0 input, float* output) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		_mm_storeu_ps(output, input);
+#elif defined(RTM_WASM128_INTRINSICS)
+		wasm_v128_store(output, input);
 #else
 		output[0] = vector_get_x(input);
 		output[1] = vector_get_y(input);
@@ -588,72 +869,104 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Writes a vector1 to unaligned memory.
-	//////////////////////////////////////////////////////////////////////////
+	/// Writes a vector1 to unaligned memory.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE void RTM_SIMD_CALL vector_store1(vector4f_arg0 input, float* output) RTM_NO_EXCEPT
 	{
+#if defined(RTM_SSE2_INTRINSICS)
+		_mm_store_ss(output, input);
+#elif defined(RTM_WASM128_INTRINSICS)
+		wasm_v128_store32_lane(output, input, 0);
+#else
 		output[0] = vector_get_x(input);
+#endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Writes a vector2 to unaligned memory.
-	//////////////////////////////////////////////////////////////////////////
+	/// Writes a vector2 to unaligned memory.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE void RTM_SIMD_CALL vector_store2(vector4f_arg0 input, float* output) RTM_NO_EXCEPT
 	{
+#if defined(RTM_SSE2_INTRINSICS)
+		_mm_store_sd(rtm_impl::bit_cast<double*>(output), _mm_castps_pd(input));
+#elif defined(RTM_WASM128_INTRINSICS)
+		wasm_v128_store64_lane(output, input, 0);
+#else
 		output[0] = vector_get_x(input);
 		output[1] = vector_get_y(input);
+#endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Writes a vector3 to unaligned memory.
-	//////////////////////////////////////////////////////////////////////////
+	/// Writes a vector3 to unaligned memory.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE void RTM_SIMD_CALL vector_store3(vector4f_arg0 input, float* output) RTM_NO_EXCEPT
 	{
+#if defined(RTM_SSE2_INTRINSICS)
+		_mm_store_sd(rtm_impl::bit_cast<double*>(output), _mm_castps_pd(input));
+		_mm_store_ss(output + 2, _mm_shuffle_ps(input, input, _MM_SHUFFLE(2, 2, 2, 2)));
+#elif defined(RTM_WASM128_INTRINSICS)
+		wasm_v128_store64_lane(output, input, 0);
+		wasm_v128_store32_lane(output + 2, input, 2);
+#else
 		output[0] = vector_get_x(input);
 		output[1] = vector_get_y(input);
 		output[2] = vector_get_z(input);
+#endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Writes a vector4 to unaligned memory.
-	//////////////////////////////////////////////////////////////////////////
+	/// Writes a vector4 to unaligned memory.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE void RTM_SIMD_CALL vector_store(vector4f_arg0 input, uint8_t* output) RTM_NO_EXCEPT
 	{
+#if defined(RTM_SSE2_INTRINSICS)
+		_mm_storeu_ps(rtm_impl::bit_cast<float*>(output), input);
+#elif defined(RTM_WASM128_INTRINSICS)
+		wasm_v128_store(output, input);
+#else
 		std::memcpy(output, &input, sizeof(vector4f));
+#endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Writes a vector1 to unaligned memory.
-	//////////////////////////////////////////////////////////////////////////
+	/// Writes a vector1 to unaligned memory.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE void RTM_SIMD_CALL vector_store1(vector4f_arg0 input, uint8_t* output) RTM_NO_EXCEPT
 	{
+#if defined(RTM_SSE2_INTRINSICS)
+		_mm_store_ss(rtm_impl::bit_cast<float*>(output), input);
+#elif defined(RTM_WASM128_INTRINSICS)
+		wasm_v128_store32_lane(output, input, 0);
+#else
 		std::memcpy(output, &input, sizeof(float) * 1);
+#endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Writes a vector2 to unaligned memory.
-	//////////////////////////////////////////////////////////////////////////
+	/// Writes a vector2 to unaligned memory.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE void RTM_SIMD_CALL vector_store2(vector4f_arg0 input, uint8_t* output) RTM_NO_EXCEPT
 	{
+#if defined(RTM_SSE2_INTRINSICS)
+		_mm_store_sd(rtm_impl::bit_cast<double*>(output), _mm_castps_pd(input));
+#elif defined(RTM_WASM128_INTRINSICS)
+		wasm_v128_store64_lane(output, input, 0);
+#else
 		std::memcpy(output, &input, sizeof(float) * 2);
+#endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Writes a vector3 to unaligned memory.
-	//////////////////////////////////////////////////////////////////////////
+	/// Writes a vector3 to unaligned memory.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE void RTM_SIMD_CALL vector_store3(vector4f_arg0 input, uint8_t* output) RTM_NO_EXCEPT
 	{
+#if defined(RTM_SSE2_INTRINSICS)
+		_mm_store_sd(rtm_impl::bit_cast<double*>(output), _mm_castps_pd(input));
+		_mm_store_ss(rtm_impl::bit_cast<float*>(output) + 2, _mm_shuffle_ps(input, input, _MM_SHUFFLE(2, 2, 2, 2)));
+#elif defined(RTM_WASM128_INTRINSICS)
+		wasm_v128_store64_lane(output, input, 0);
+		wasm_v128_store32_lane(output + 8, input, 2);
+#else
 		std::memcpy(output, &input, sizeof(float) * 3);
+#endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Writes a vector4 to unaligned memory.
-	//////////////////////////////////////////////////////////////////////////
+	/// Writes a vector4 to unaligned memory.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE void RTM_SIMD_CALL vector_store(vector4f_arg0 input, float4f* output) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		_mm_storeu_ps(&output->x, input);
+#elif defined(RTM_WASM128_INTRINSICS)
+		wasm_v128_store(&output->x, input);
 #else
 		output->x = vector_get_x(input);
 		output->y = vector_get_y(input);
@@ -662,39 +975,52 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Writes a vector2 to unaligned memory.
-	//////////////////////////////////////////////////////////////////////////
+	/// Writes a vector2 to unaligned memory.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE void RTM_SIMD_CALL vector_store2(vector4f_arg0 input, float2f* output) RTM_NO_EXCEPT
 	{
+#if defined(RTM_SSE2_INTRINSICS)
+		_mm_store_sd(rtm_impl::bit_cast<double*>(&output->x), _mm_castps_pd(input));
+#elif defined(RTM_WASM128_INTRINSICS)
+		wasm_v128_store64_lane(&output->x, input, 0);
+#else
 		output->x = vector_get_x(input);
 		output->y = vector_get_y(input);
+#endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Writes a vector3 to unaligned memory.
-	//////////////////////////////////////////////////////////////////////////
+	/// Writes a vector3 to unaligned memory.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE void RTM_SIMD_CALL vector_store3(vector4f_arg0 input, float3f* output) RTM_NO_EXCEPT
 	{
+#if defined(RTM_SSE2_INTRINSICS)
+		_mm_store_sd(rtm_impl::bit_cast<double*>(&output->x), _mm_castps_pd(input));
+		_mm_store_ss(rtm_impl::bit_cast<float*>(&output->z), _mm_shuffle_ps(input, input, _MM_SHUFFLE(2, 2, 2, 2)));
+#elif defined(RTM_WASM128_INTRINSICS)
+		wasm_v128_store64_lane(&output->x, input, 0);
+		wasm_v128_store32_lane(&output->z, input, 2);
+#else
 		output->x = vector_get_x(input);
 		output->y = vector_get_y(input);
 		output->z = vector_get_z(input);
+#endif
 	}
 
+	/// \}
 
-
-	//////////////////////////////////////////////////////////////////////////
-	// Arithmetic
-	//////////////////////////////////////////////////////////////////////////
 
 
 	//////////////////////////////////////////////////////////////////////////
-	// Per component addition of the two inputs: lhs + rhs
+	/// \name Arithmetic
+	/// \{
 	//////////////////////////////////////////////////////////////////////////
+
+
+	/// Per component addition of the two inputs: lhs + rhs
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_add(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		return _mm_add_ps(lhs, rhs);
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_f32x4_add(lhs, rhs);
 #elif defined(RTM_NEON_INTRINSICS)
 		return vaddq_f32(lhs, rhs);
 #else
@@ -702,13 +1028,13 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Per component subtraction of the two inputs: lhs - rhs
-	//////////////////////////////////////////////////////////////////////////
+	/// Per component subtraction of the two inputs: lhs - rhs
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_sub(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		return _mm_sub_ps(lhs, rhs);
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_f32x4_sub(lhs, rhs);
 #elif defined(RTM_NEON_INTRINSICS)
 		return vsubq_f32(lhs, rhs);
 #else
@@ -716,13 +1042,13 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Per component multiplication of the two inputs: lhs * rhs
-	//////////////////////////////////////////////////////////////////////////
+	/// Per component multiplication of the two inputs: lhs * rhs
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_mul(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		return _mm_mul_ps(lhs, rhs);
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_f32x4_mul(lhs, rhs);
 #elif defined(RTM_NEON_INTRINSICS)
 		return vmulq_f32(lhs, rhs);
 #else
@@ -730,9 +1056,7 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Per component multiplication of the vector by a scalar: lhs * rhs
-	//////////////////////////////////////////////////////////////////////////
+	/// Per component multiplication of the vector by a scalar: lhs * rhs
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_mul(vector4f_arg0 lhs, float rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_NEON_INTRINSICS)
@@ -743,22 +1067,20 @@ namespace rtm
 	}
 
 #if defined(RTM_SSE2_INTRINSICS)
-	//////////////////////////////////////////////////////////////////////////
-	// Per component multiplication of the vector by a scalar: lhs * rhs
-	//////////////////////////////////////////////////////////////////////////
+	/// Per component multiplication of the vector by a scalar: lhs * rhs
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_mul(vector4f_arg0 lhs, scalarf_arg1 rhs) RTM_NO_EXCEPT
 	{
 		return _mm_mul_ps(lhs, _mm_shuffle_ps(rhs.value, rhs.value, _MM_SHUFFLE(0, 0, 0, 0)));
 	}
 #endif
 
-	//////////////////////////////////////////////////////////////////////////
-	// Per component division of the two inputs: lhs / rhs
-	//////////////////////////////////////////////////////////////////////////
+	/// Per component division of the two inputs: lhs / rhs
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_div(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		return _mm_div_ps(lhs, rhs);
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_f32x4_div(lhs, rhs);
 #elif defined (RTM_NEON64_INTRINSICS)
 		return vdivq_f32(lhs, rhs);
 #elif defined(RTM_NEON_INTRINSICS)
@@ -779,13 +1101,14 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Per component maximum of the two inputs: max(lhs, rhs)
-	//////////////////////////////////////////////////////////////////////////
+	/// Per component maximum of the two inputs: max(lhs, rhs)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_max(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		return _mm_max_ps(lhs, rhs);
+#elif defined(RTM_WASM128_INTRINSICS)
+		// pmax has the same semantics as std::max and it is a single instruction on x64, unlike max which propagates NaN
+		return wasm_f32x4_pmax(lhs, rhs);
 #elif defined(RTM_NEON_INTRINSICS)
 		return vmaxq_f32(lhs, rhs);
 #else
@@ -793,13 +1116,14 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Per component minimum of the two inputs: min(lhs, rhs)
-	//////////////////////////////////////////////////////////////////////////
+	/// Per component minimum of the two inputs: min(lhs, rhs)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_min(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		return _mm_min_ps(lhs, rhs);
+#elif defined(RTM_WASM128_INTRINSICS)
+		// pmin has the same semantics as std::min and it is a single instruction on x64, unlike min which propagates NaN
+		return wasm_f32x4_pmin(lhs, rhs);
 #elif defined(RTM_NEON_INTRINSICS)
 		return vminq_f32(lhs, rhs);
 #else
@@ -807,22 +1131,20 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Per component clamping of an input between a minimum and a maximum value: min(max_value, max(min_value, input))
-	//////////////////////////////////////////////////////////////////////////
+	/// Per component clamping of an input between a minimum and a maximum value: min(max_value, max(min_value, input))
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_clamp(vector4f_arg0 input, vector4f_arg1 min_value, vector4f_arg2 max_value) RTM_NO_EXCEPT
 	{
 		return vector_min(max_value, vector_max(min_value, input));
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Per component absolute of the input: abs(input)
-	//////////////////////////////////////////////////////////////////////////
+	/// Per component absolute of the input: abs(input)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_abs(vector4f_arg0 input) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		const __m128i abs_mask = _mm_set_epi32(0x7FFFFFFFULL, 0x7FFFFFFFULL, 0x7FFFFFFFULL, 0x7FFFFFFFULL);
 		return _mm_and_ps(input, _mm_castsi128_ps(abs_mask));
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_f32x4_abs(input);
 #elif defined(RTM_NEON_INTRINSICS)
 		return vabsq_f32(input);
 #else
@@ -830,14 +1152,14 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Per component negation of the input: -input
-	//////////////////////////////////////////////////////////////////////////
+	/// Per component negation of the input: -input
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_neg(vector4f_arg0 input) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
-		constexpr __m128 signs = { -0.0F, -0.0F, -0.0F, -0.0F };
+		constexpr __m128 signs = RTM_VECTOR4F_MAKE(-0.0F, -0.0F, -0.0F, -0.0F);
 		return _mm_xor_ps(input, signs);
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_f32x4_neg(input);
 #elif defined(RTM_NEON_INTRINSICS)
 		return vnegq_f32(input);
 #else
@@ -845,37 +1167,62 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Per component reciprocal of the input: 1.0 / input
-	//////////////////////////////////////////////////////////////////////////
-	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_reciprocal(vector4f_arg0 input) RTM_NO_EXCEPT
+	/// Per component negation of the input: -input
+	/// Each template argument controls whether a SIMD lane should be negated (true) or not (false).
+	template<bool x, bool y, bool z, bool w>
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_neg(vector4f_arg0 input) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
+		constexpr __m128 signs = RTM_VECTOR4F_MAKE(x ? -0.0F : 0.0F, y ? -0.0F : 0.0F, z ? -0.0F : 0.0F, w ? -0.0F : 0.0F);
+		return _mm_xor_ps(input, signs);
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_v128_xor(input, wasm_f32x4_const(x ? -0.0F : 0.0F, y ? -0.0F : 0.0F, z ? -0.0F : 0.0F, w ? -0.0F : 0.0F));
+#elif defined(RTM_NEON_INTRINSICS)
+		alignas(16) constexpr uint32_t sign_bit_i[4] =
+		{
+			x ? 0x80000000U : 0,
+			y ? 0x80000000U : 0,
+			z ? 0x80000000U : 0,
+			w ? 0x80000000U : 0,
+		};
+		const uint32x4_t sign_bit = *rtm_impl::bit_cast<const uint32x4_t*>(&sign_bit_i[0]);
+		return vreinterpretq_f32_u32(veorq_u32(vreinterpretq_u32_f32(input), sign_bit));
+#else
+		const vector4f signs = vector_set(x ? -1.0F : 1.0F, y ? -1.0F : 1.0F, z ? -1.0F : 1.0F, w ? -1.0F : 1.0F);
+		return vector_mul(input, signs);
+#endif
+	}
+
+	/// Per component reciprocal of the input: 1.0 / input
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_reciprocal(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+		// Performance note:
+		// With modern out-of-order executing processors, it is typically faster to use
+		// a full division instead of a reciprocal estimate + Newton-Raphson iterations
+		// because the resulting code is more dense and is more likely to inline and
+		// as it uses fewer instructions.
+#if defined(RTM_SSE2_INTRINSICS)
 		return _mm_div_ps(_mm_set_ps1(1.0F), input);
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_f32x4_div(wasm_f32x4_splat(1.0F), input);
 #elif defined(RTM_NEON64_INTRINSICS)
 		return vdivq_f32(vdupq_n_f32(1.0F), input);
 #elif defined(RTM_NEON_INTRINSICS)
-		// Perform two passes of Newton-Raphson iteration on the hardware estimate
-		float32x4_t x0 = vrecpeq_f32(input);
-
-		// First iteration
-		float32x4_t x1 = vmulq_f32(x0, vrecpsq_f32(x0, input));
-
-		// Second iteration
-		float32x4_t x2 = vmulq_f32(x1, vrecpsq_f32(x1, input));
-		return x2;
+		// ARMv7 does not have a vector division. We use the scalar division instead of the
+		// reciprocal estimate because the estimate does not give the same result as the other code paths.
+		return vector_div(vector_set(1.0F), input);
 #else
 		return vector_div(vector_set(1.0F), input);
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Per component square root of the input: sqrt(input)
-	//////////////////////////////////////////////////////////////////////////
+	/// Per component square root of the input: sqrt(input)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_sqrt(vector4f_arg0 input) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		return _mm_sqrt_ps(input);
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_f32x4_sqrt(input);
 #elif defined(RTM_NEON64_INTRINSICS) && defined(RTM_IMPL_VSQRT_SUPPORTED)
 		return vsqrtq_f32(input);
 #else
@@ -887,10 +1234,19 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Per component returns the smallest integer value not less than the input (round towards positive infinity).
-	// vector_ceil([1.8, 1.0, -1.8, -1.0]) = [2.0, 1.0, -1.0, -1.0]
-	//////////////////////////////////////////////////////////////////////////
+	/// Per component reciprocal square root of the input: 1.0 / sqrt(input)
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_sqrt_reciprocal(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+		// Performance note:
+		// With modern out-of-order executing processors, it is typically faster to use
+		// a full division/square root instead of a reciprocal estimate + Newton-Raphson iterations
+		// because the resulting code is more dense and is more likely to inline and
+		// as it uses fewer instructions.
+		return vector_reciprocal(vector_sqrt(input));
+	}
+
+	/// Per component returns the smallest integer value not less than the input (round towards positive infinity).
+	/// vector_ceil([1.8, 1.0, -1.8, -1.0]) = [2.0, 1.0, -1.0, -1.0]
 	RTM_DISABLE_SECURITY_COOKIE_CHECK inline vector4f RTM_SIMD_CALL vector_ceil(vector4f_arg0 input) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE4_INTRINSICS)
@@ -927,7 +1283,13 @@ namespace rtm
 		// Subtract our bias to properly handle positive values
 		integer_part = _mm_sub_ps(integer_part, bias);
 
+		// Keep the sign of the input as the other code paths do, thus floor(-0.0) = -0.0 and ceil(-0.5) = -0.0
+		const __m128 sign_mask = _mm_set_ps1(-0.0F);
+		integer_part = _mm_or_ps(integer_part, _mm_and_ps(input, sign_mask));
+
 		return _mm_or_ps(_mm_and_ps(use_original_input, input), _mm_andnot_ps(use_original_input, integer_part));
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_f32x4_ceil(input);
 #elif defined(RTM_NEON64_INTRINSICS)
 		return vrndpq_f32(input);
 #elif defined(RTM_NEON_INTRINSICS)
@@ -953,10 +1315,16 @@ namespace rtm
 		// A positive input will round towards zero and be lower when we need it to be greater.
 		uint32x4_t is_positive = vcltq_f32(integer_part, input);
 
-		float32x4_t bias = vcvtq_f32_s32(is_positive);
+		// Convert our mask to a float, ~0 yields -1.0 since it is a valid signed integer
+		float32x4_t bias = vcvtq_f32_s32(vreinterpretq_s32_u32(is_positive));
 
 		// Subtract our bias to properly handle positive values
 		integer_part = vsubq_f32(integer_part, bias);
+
+		// Keep the sign of the input as the other code paths do, thus floor(-0.0) = -0.0 and ceil(-0.5) = -0.0
+		const uint32x4_t sign_mask = vreinterpretq_u32_f32(vdupq_n_f32(-0.0F));
+		const uint32x4_t sign = vandq_u32(vreinterpretq_u32_f32(input), sign_mask);
+		integer_part = vreinterpretq_f32_u32(vorrq_u32(vreinterpretq_u32_f32(integer_part), sign));
 
 		return vbslq_f32(use_original_input, input, integer_part);
 #else
@@ -964,10 +1332,8 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Per component returns the largest integer value not greater than the input (round towards negative infinity).
-	// vector_floor([1.8, 1.0, -1.8, -1.0]) = [1.0, 1.0, -2.0, -1.0]
-	//////////////////////////////////////////////////////////////////////////
+	/// Per component returns the largest integer value not greater than the input (round towards negative infinity).
+	/// vector_floor([1.8, 1.0, -1.8, -1.0]) = [1.0, 1.0, -2.0, -1.0]
 	RTM_DISABLE_SECURITY_COOKIE_CHECK inline vector4f RTM_SIMD_CALL vector_floor(vector4f_arg0 input) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE4_INTRINSICS)
@@ -1004,7 +1370,13 @@ namespace rtm
 		// Add our bias to properly handle negative values
 		integer_part = _mm_add_ps(integer_part, bias);
 
+		// Keep the sign of the input as the other code paths do, thus floor(-0.0) = -0.0 and ceil(-0.5) = -0.0
+		const __m128 sign_mask = _mm_set_ps1(-0.0F);
+		integer_part = _mm_or_ps(integer_part, _mm_and_ps(input, sign_mask));
+
 		return _mm_or_ps(_mm_and_ps(use_original_input, input), _mm_andnot_ps(use_original_input, integer_part));
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_f32x4_floor(input);
 #elif defined(RTM_NEON64_INTRINSICS)
 		return vrndmq_f32(input);
 #elif defined(RTM_NEON_INTRINSICS)
@@ -1030,10 +1402,16 @@ namespace rtm
 		// A negative input will round towards zero and be greater when we need it to be smaller.
 		uint32x4_t is_negative = vcgtq_f32(integer_part, input);
 
-		float32x4_t bias = vcvtq_f32_s32(is_negative);
+		// Convert our mask to a float, ~0 yields -1.0 since it is a valid signed integer
+		float32x4_t bias = vcvtq_f32_s32(vreinterpretq_s32_u32(is_negative));
 
 		// Add our bias to properly handle negative values
 		integer_part = vaddq_f32(integer_part, bias);
+
+		// Keep the sign of the input as the other code paths do, thus floor(-0.0) = -0.0 and ceil(-0.5) = -0.0
+		const uint32x4_t sign_mask = vreinterpretq_u32_f32(vdupq_n_f32(-0.0F));
+		const uint32x4_t sign = vandq_u32(vreinterpretq_u32_f32(input), sign_mask);
+		integer_part = vreinterpretq_f32_u32(vorrq_u32(vreinterpretq_u32_f32(integer_part), sign));
 
 		return vbslq_f32(use_original_input, input, integer_part);
 #else
@@ -1041,9 +1419,7 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// 3D cross product: lhs x rhs
-	//////////////////////////////////////////////////////////////////////////
+	/// 3D cross product: lhs x rhs
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_cross3(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
@@ -1054,6 +1430,31 @@ namespace rtm
 
 		// cross(a, b) = ((a * b.yzx) - (a.yzx * b)).yzx
 		return _mm_shuffle_ps(tmp_zxy, tmp_zxy, _MM_SHUFFLE(3, 0, 2, 1));
+#elif defined(RTM_WASM128_INTRINSICS)
+		// cross(a, b).zxy = (a * b.yzx) - (a.yzx * b)
+		v128_t lhs_yzx = wasm_i32x4_shuffle(lhs, lhs, 1, 2, 0, 3);
+		v128_t rhs_yzx = wasm_i32x4_shuffle(rhs, rhs, 1, 2, 0, 3);
+		v128_t tmp_zxy = wasm_f32x4_sub(wasm_f32x4_mul(lhs, rhs_yzx), wasm_f32x4_mul(lhs_yzx, rhs));
+
+		// cross(a, b) = ((a * b.yzx) - (a.yzx * b)).yzx
+		return wasm_i32x4_shuffle(tmp_zxy, tmp_zxy, 1, 2, 0, 3);
+#elif defined(RTM_NEON_INTRINSICS)
+		// cross(a, b) = (a.yzx * b.zxy) - (a.zxy * b.yzx)
+		float32x4_t lhs_yzwx = vextq_f32(lhs, lhs, 1);
+		float32x4_t rhs_wxyz = vextq_f32(rhs, rhs, 3);
+
+		float32x4_t lhs_yzx = vsetq_lane_f32(vgetq_lane_f32(lhs, 0), lhs_yzwx, 2);
+		float32x4_t rhs_zxy = vsetq_lane_f32(vgetq_lane_f32(rhs, 2), rhs_wxyz, 0);
+
+		// part_a = (a.yzx * b.zxy)
+		float32x4_t part_a = vmulq_f32(lhs_yzx, rhs_zxy);
+
+		float32x4_t lhs_wxyz = vextq_f32(lhs, lhs, 3);
+		float32x4_t rhs_yzwx = vextq_f32(rhs, rhs, 1);
+		float32x4_t lhs_zxy = vsetq_lane_f32(vgetq_lane_f32(lhs, 2), lhs_wxyz, 0);
+		float32x4_t rhs_yzx = vsetq_lane_f32(vgetq_lane_f32(rhs, 0), rhs_yzwx, 2);
+
+		return vmlsq_f32(part_a, lhs_zxy, rhs_yzx);
 #else
 		// cross(a, b) = (a.yzx * b.zxy) - (a.zxy * b.yzx)
 		const float lhs_x = vector_get_x(lhs);
@@ -1068,18 +1469,16 @@ namespace rtm
 
 	namespace rtm_impl
 	{
-		//////////////////////////////////////////////////////////////////////////
 		// This is a helper struct to allow a single consistent API between
 		// various vector types when the semantics are identical but the return
 		// type differs. Implicit coercion is used to return the desired value
 		// at the call site.
-		//////////////////////////////////////////////////////////////////////////
 		struct vector4f_vector_dot
 		{
 			RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE RTM_SIMD_CALL operator float() const RTM_NO_EXCEPT
 			{
 #if defined(RTM_SSE4_INTRINSICS) && 0
-				// SSE4 dot product instruction isn't precise enough
+				// SSE4 dot product instruction appears slower on Zen2, is it the case elsewhere as well?
 				return _mm_cvtss_f32(_mm_dp_ps(lhs, rhs, 0xFF));
 #elif defined(RTM_SSE2_INTRINSICS)
 				__m128 x2_y2_z2_w2 = _mm_mul_ps(lhs, rhs);
@@ -1088,50 +1487,25 @@ namespace rtm
 				__m128 y2w2_0_0_0 = _mm_shuffle_ps(x2z2_y2w2_0_0, x2z2_y2w2_0_0, _MM_SHUFFLE(0, 0, 0, 1));
 				__m128 x2y2z2w2_0_0_0 = _mm_add_ps(x2z2_y2w2_0_0, y2w2_0_0_0);
 				return _mm_cvtss_f32(x2y2z2w2_0_0_0);
-#else
-				return (vector_get_x(lhs) * vector_get_x(rhs)) + (vector_get_y(lhs) * vector_get_y(rhs)) + (vector_get_z(lhs) * vector_get_z(rhs)) + (vector_get_w(lhs) * vector_get_w(rhs));
-#endif
-			}
-
-#if defined(RTM_SSE2_INTRINSICS)
-			RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE RTM_SIMD_CALL operator scalarf() const RTM_NO_EXCEPT
-			{
-#if defined(RTM_SSE4_INTRINSICS) && 0
-				// SSE4 dot product instruction isn't precise enough
-				return scalarf{ _mm_cvtss_f32(_mm_dp_ps(lhs, rhs, 0xFF)) };
-#else
-				__m128 x2_y2_z2_w2 = _mm_mul_ps(lhs, rhs);
-				__m128 z2_w2_0_0 = _mm_shuffle_ps(x2_y2_z2_w2, x2_y2_z2_w2, _MM_SHUFFLE(0, 0, 3, 2));
-				__m128 x2z2_y2w2_0_0 = _mm_add_ps(x2_y2_z2_w2, z2_w2_0_0);
-				__m128 y2w2_0_0_0 = _mm_shuffle_ps(x2z2_y2w2_0_0, x2z2_y2w2_0_0, _MM_SHUFFLE(0, 0, 0, 1));
-				__m128 x2y2z2w2_0_0_0 = _mm_add_ps(x2z2_y2w2_0_0, y2w2_0_0_0);
-				return scalarf{ x2y2z2w2_0_0_0 };
-#endif
-			}
-#endif
-
-			RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE RTM_SIMD_CALL operator vector4f() const RTM_NO_EXCEPT
-			{
-#if defined(RTM_SSE4_INTRINSICS) && 0
-				// SSE4 dot product instruction isn't precise enough
-				return _mm_dp_ps(lhs, rhs, 0xFF);
-#elif defined(RTM_SSE2_INTRINSICS)
-				__m128 x2_y2_z2_w2 = _mm_mul_ps(lhs, rhs);
-				__m128 z2_w2_0_0 = _mm_shuffle_ps(x2_y2_z2_w2, x2_y2_z2_w2, _MM_SHUFFLE(0, 0, 3, 2));
-				__m128 x2z2_y2w2_0_0 = _mm_add_ps(x2_y2_z2_w2, z2_w2_0_0);
-				__m128 y2w2_0_0_0 = _mm_shuffle_ps(x2z2_y2w2_0_0, x2z2_y2w2_0_0, _MM_SHUFFLE(0, 0, 0, 1));
-				__m128 x2y2z2w2_0_0_0 = _mm_add_ps(x2z2_y2w2_0_0, y2w2_0_0_0);
-				return _mm_shuffle_ps(x2y2z2w2_0_0_0, x2y2z2w2_0_0_0, _MM_SHUFFLE(0, 0, 0, 0));
+#elif defined(RTM_WASM128_INTRINSICS)
+				v128_t x2_y2_z2_w2 = wasm_f32x4_mul(lhs, rhs);
+				v128_t z2_w2_x2_y2 = wasm_i32x4_shuffle(x2_y2_z2_w2, x2_y2_z2_w2, 2, 3, 0, 1);
+				v128_t x2z2_y2w2_x2z2_y2w2 = wasm_f32x4_add(x2_y2_z2_w2, z2_w2_x2_y2);
+				v128_t y2w2_x2z2_y2w2_x2z2 = wasm_i32x4_shuffle(x2z2_y2w2_x2z2_y2w2, x2z2_y2w2_x2z2_y2w2, 1, 0, 3, 2);
+				v128_t x2y2z2w2_x2y2z2w2_x2y2z2w2_x2y2z2w2 = wasm_f32x4_add(x2z2_y2w2_x2z2_y2w2, y2w2_x2z2_y2w2_x2z2);
+				return wasm_f32x4_extract_lane(x2y2z2w2_x2y2z2w2_x2y2z2w2_x2y2z2w2, 0);
+#elif defined(RTM_NEON64_INTRINSICS) && defined(RTM_IMPL_VADDVQ_SUPPORTED)
+				float32x4_t x2_y2_z2_w2 = vmulq_f32(lhs, rhs);
+				return vaddvq_f32(x2_y2_z2_w2);
 #elif defined(RTM_NEON_INTRINSICS)
 				float32x4_t x2_y2_z2_w2 = vmulq_f32(lhs, rhs);
 				float32x2_t x2_y2 = vget_low_f32(x2_y2_z2_w2);
 				float32x2_t z2_w2 = vget_high_f32(x2_y2_z2_w2);
 				float32x2_t x2z2_y2w2 = vadd_f32(x2_y2, z2_w2);
 				float32x2_t x2y2z2w2 = vpadd_f32(x2z2_y2w2, x2z2_y2w2);
-				return vcombine_f32(x2y2z2w2, x2y2z2w2);
+				return vget_lane_f32(x2y2z2w2, 0);
 #else
-				scalarf result = *this;
-				return vector_set(result);
+				return (vector_get_x(lhs) * vector_get_x(rhs)) + (vector_get_y(lhs) * vector_get_y(rhs)) + (vector_get_z(lhs) * vector_get_z(rhs)) + (vector_get_w(lhs) * vector_get_w(rhs));
 #endif
 			}
 
@@ -1140,28 +1514,163 @@ namespace rtm
 		};
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// 4D dot product: lhs . rhs
-	//////////////////////////////////////////////////////////////////////////
+	/// 4D dot product: lhs . rhs
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE constexpr rtm_impl::vector4f_vector_dot RTM_SIMD_CALL vector_dot(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 		return rtm_impl::vector4f_vector_dot{ lhs, rhs };
 	}
 
+	/// 4D dot product: lhs . rhs
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE scalarf RTM_SIMD_CALL vector_dot_as_scalar(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
+	{
+#if defined(RTM_SSE2_INTRINSICS)
+	#if defined(RTM_SSE4_INTRINSICS) && 0
+		// SSE4 dot product instruction appears slower on Zen2, is it the case elsewhere as well?
+		return scalarf{ _mm_cvtss_f32(_mm_dp_ps(lhs, rhs, 0xFF)) };
+	#else
+		__m128 x2_y2_z2_w2 = _mm_mul_ps(lhs, rhs);
+		__m128 z2_w2_0_0 = _mm_shuffle_ps(x2_y2_z2_w2, x2_y2_z2_w2, _MM_SHUFFLE(0, 0, 3, 2));
+		__m128 x2z2_y2w2_0_0 = _mm_add_ps(x2_y2_z2_w2, z2_w2_0_0);
+		__m128 y2w2_0_0_0 = _mm_shuffle_ps(x2z2_y2w2_0_0, x2z2_y2w2_0_0, _MM_SHUFFLE(0, 0, 0, 1));
+		__m128 x2y2z2w2_0_0_0 = _mm_add_ps(x2z2_y2w2_0_0, y2w2_0_0_0);
+		return scalarf{ x2y2z2w2_0_0_0 };
+	#endif
+#else
+	return vector_dot(lhs, rhs);
+#endif
+	}
+
+	/// 4D dot product: lhs . rhs
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_dot_as_vector(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
+	{
+#if defined(RTM_SSE4_INTRINSICS) && 0
+		// SSE4 dot product instruction appears slower on Zen2, is it the case elsewhere as well?
+		return _mm_dp_ps(lhs, rhs, 0xFF);
+#elif defined(RTM_SSE2_INTRINSICS)
+		__m128 x2_y2_z2_w2 = _mm_mul_ps(lhs, rhs);
+		__m128 z2_w2_0_0 = _mm_shuffle_ps(x2_y2_z2_w2, x2_y2_z2_w2, _MM_SHUFFLE(0, 0, 3, 2));
+		__m128 x2z2_y2w2_0_0 = _mm_add_ps(x2_y2_z2_w2, z2_w2_0_0);
+		__m128 y2w2_0_0_0 = _mm_shuffle_ps(x2z2_y2w2_0_0, x2z2_y2w2_0_0, _MM_SHUFFLE(0, 0, 0, 1));
+		__m128 x2y2z2w2_0_0_0 = _mm_add_ps(x2z2_y2w2_0_0, y2w2_0_0_0);
+		return _mm_shuffle_ps(x2y2z2w2_0_0_0, x2y2z2w2_0_0_0, _MM_SHUFFLE(0, 0, 0, 0));
+#elif defined(RTM_WASM128_INTRINSICS)
+		v128_t x2_y2_z2_w2 = wasm_f32x4_mul(lhs, rhs);
+		v128_t z2_w2_x2_y2 = wasm_i32x4_shuffle(x2_y2_z2_w2, x2_y2_z2_w2, 2, 3, 0, 1);
+		v128_t x2z2_y2w2_x2z2_y2w2 = wasm_f32x4_add(x2_y2_z2_w2, z2_w2_x2_y2);
+		v128_t y2w2_x2z2_y2w2_x2z2 = wasm_i32x4_shuffle(x2z2_y2w2_x2z2_y2w2, x2z2_y2w2_x2z2_y2w2, 1, 0, 3, 2);
+		v128_t x2y2z2w2_x2y2z2w2_x2y2z2w2_x2y2z2w2 = wasm_f32x4_add(x2z2_y2w2_x2z2_y2w2, y2w2_x2z2_y2w2_x2z2);
+		return x2y2z2w2_x2y2z2w2_x2y2z2w2_x2y2z2w2;
+#elif defined(RTM_NEON64_INTRINSICS)
+		float32x4_t x2_y2_z2_w2 = vmulq_f32(lhs, rhs);
+		float32x4_t x2y2_z2w2_x2y2_z2w2 = vpaddq_f32(x2_y2_z2_w2, x2_y2_z2_w2);
+		float32x4_t x2y2z2w2_x2y2z2w2_x2y2z2w2_x2y2z2w2 = vpaddq_f32(x2y2_z2w2_x2y2_z2w2, x2y2_z2w2_x2y2_z2w2);
+		return x2y2z2w2_x2y2z2w2_x2y2z2w2_x2y2z2w2;
+#elif defined(RTM_NEON_INTRINSICS)
+		float32x4_t x2_y2_z2_w2 = vmulq_f32(lhs, rhs);
+		float32x2_t x2_y2 = vget_low_f32(x2_y2_z2_w2);
+		float32x2_t z2_w2 = vget_high_f32(x2_y2_z2_w2);
+		float32x2_t x2z2_y2w2 = vadd_f32(x2_y2, z2_w2);
+		float32x2_t x2y2z2w2 = vpadd_f32(x2z2_y2w2, x2z2_y2w2);
+		return vcombine_f32(x2y2z2w2, x2y2z2w2);
+#else
+		return vector_set(vector_dot_as_scalar(lhs, rhs));
+#endif
+	}
+
 	namespace rtm_impl
 	{
-		//////////////////////////////////////////////////////////////////////////
 		// This is a helper struct to allow a single consistent API between
 		// various vector types when the semantics are identical but the return
 		// type differs. Implicit coercion is used to return the desired value
 		// at the call site.
-		//////////////////////////////////////////////////////////////////////////
+		struct vector4f_vector_dot2
+		{
+			RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE RTM_SIMD_CALL operator float() const RTM_NO_EXCEPT
+			{
+#if defined(RTM_SSE4_INTRINSICS) && 0
+				// SSE4 dot product instruction appears slower on Zen2, is it the case elsewhere as well?
+				return _mm_cvtss_f32(_mm_dp_ps(lhs, rhs, 0x7F));
+#elif defined(RTM_SSE2_INTRINSICS)
+				__m128 x2_y2_z2_w2 = _mm_mul_ps(lhs, rhs);
+				__m128 y2_0_0_0 = _mm_shuffle_ps(x2_y2_z2_w2, x2_y2_z2_w2, _MM_SHUFFLE(0, 0, 0, 1));
+				__m128 x2y2_0_0_0 = _mm_add_ss(x2_y2_z2_w2, y2_0_0_0);
+				return _mm_cvtss_f32(x2y2_0_0_0);
+#elif defined(RTM_WASM128_INTRINSICS)
+				v128_t x2_y2_z2_w2 = wasm_f32x4_mul(lhs, rhs);
+				v128_t y2_x2_w2_z2 = wasm_i32x4_shuffle(x2_y2_z2_w2, x2_y2_z2_w2, 1, 0, 3, 2);
+				v128_t x2y2_x2y2_z2w2_z2w2 = wasm_f32x4_add(x2_y2_z2_w2, y2_x2_w2_z2);
+				return wasm_f32x4_extract_lane(x2y2_x2y2_z2w2_z2w2, 0);
+#elif defined(RTM_NEON_INTRINSICS)
+				float32x4_t x2_y2_z2_w2 = vmulq_f32(lhs, rhs);
+				float32x2_t x2_y2 = vget_low_f32(x2_y2_z2_w2);
+				float32x2_t x2y2_x2y2 = vpadd_f32(x2_y2, x2_y2);
+				return vget_lane_f32(x2y2_x2y2, 0);
+#else
+				return (vector_get_x(lhs) * vector_get_x(rhs)) + (vector_get_y(lhs) * vector_get_y(rhs));
+#endif
+			}
+
+			vector4f lhs;
+			vector4f rhs;
+		};
+	}
+
+	/// 2D dot product: lhs . rhs
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE constexpr rtm_impl::vector4f_vector_dot2 RTM_SIMD_CALL vector_dot2(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
+	{
+		return rtm_impl::vector4f_vector_dot2{ lhs, rhs };
+	}
+
+	/// 2D dot product: lhs . rhs
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE scalarf RTM_SIMD_CALL vector_dot2_as_scalar(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
+	{
+#if defined(RTM_SSE2_INTRINSICS)
+		__m128 x2_y2_z2_w2 = _mm_mul_ps(lhs, rhs);
+		__m128 y2_0_0_0 = _mm_shuffle_ps(x2_y2_z2_w2, x2_y2_z2_w2, _MM_SHUFFLE(0, 0, 0, 1));
+		return scalarf{ _mm_add_ss(x2_y2_z2_w2, y2_0_0_0) };
+#else
+		return vector_dot2(lhs, rhs);
+#endif
+	}
+
+	/// 2D dot product: lhs . rhs
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_dot2_as_vector(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
+	{
+#if defined(RTM_SSE4_INTRINSICS) && 0
+		// SSE4 dot product instruction appears slower on Zen2, is it the case elsewhere as well?
+		return _mm_cvtss_f32(_mm_dp_ps(lhs, rhs, 0xFF));
+#elif defined(RTM_SSE2_INTRINSICS)
+		__m128 x2_y2_z2_w2 = _mm_mul_ps(lhs, rhs);
+		__m128 y2_0_0_0 = _mm_shuffle_ps(x2_y2_z2_w2, x2_y2_z2_w2, _MM_SHUFFLE(0, 0, 0, 1));
+		__m128 x2y2_0_0_0 = _mm_add_ss(x2_y2_z2_w2, y2_0_0_0);
+		return _mm_shuffle_ps(x2y2_0_0_0, x2y2_0_0_0, _MM_SHUFFLE(0, 0, 0, 0));
+#elif defined(RTM_WASM128_INTRINSICS)
+		v128_t x2_y2_z2_w2 = wasm_f32x4_mul(lhs, rhs);
+		v128_t y2_x2_w2_z2 = wasm_i32x4_shuffle(x2_y2_z2_w2, x2_y2_z2_w2, 1, 0, 3, 2);
+		v128_t x2y2_x2y2_z2w2_z2w2 = wasm_f32x4_add(x2_y2_z2_w2, y2_x2_w2_z2);
+		return wasm_i32x4_shuffle(x2y2_x2y2_z2w2_z2w2, x2y2_x2y2_z2w2_z2w2, 0, 0, 0, 0);
+#elif defined(RTM_NEON_INTRINSICS)
+		float32x4_t x2_y2_z2_w2 = vmulq_f32(lhs, rhs);
+		float32x2_t x2_y2 = vget_low_f32(x2_y2_z2_w2);
+		float32x2_t x2y2_x2y2 = vpadd_f32(x2_y2, x2_y2);
+		return vcombine_f32(x2y2_x2y2, x2y2_x2y2);
+#else
+		return vector_set(vector_dot2_as_scalar(lhs, rhs));
+#endif
+	}
+
+	namespace rtm_impl
+	{
+		// This is a helper struct to allow a single consistent API between
+		// various vector types when the semantics are identical but the return
+		// type differs. Implicit coercion is used to return the desired value
+		// at the call site.
 		struct vector4f_vector_dot3
 		{
 			RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE RTM_SIMD_CALL operator float() const RTM_NO_EXCEPT
 			{
 #if defined(RTM_SSE4_INTRINSICS) && 0
-				// SSE4 dot product instruction isn't precise enough
+				// SSE4 dot product instruction appears slower on Zen2, is it the case elsewhere as well?
 				return _mm_cvtss_f32(_mm_dp_ps(lhs, rhs, 0x7F));
 #elif defined(RTM_SSE2_INTRINSICS)
 				__m128 x2_y2_z2_w2 = _mm_mul_ps(lhs, rhs);
@@ -1170,6 +1679,13 @@ namespace rtm
 				__m128 z2_0_0_0 = _mm_shuffle_ps(x2_y2_z2_w2, x2_y2_z2_w2, _MM_SHUFFLE(0, 0, 0, 2));
 				__m128 x2y2z2_0_0_0 = _mm_add_ss(x2y2_0_0_0, z2_0_0_0);
 				return _mm_cvtss_f32(x2y2z2_0_0_0);
+#elif defined(RTM_WASM128_INTRINSICS)
+				v128_t x2_y2_z2_w2 = wasm_f32x4_mul(lhs, rhs);
+				v128_t y2_y2_y2_y2 = wasm_i32x4_shuffle(x2_y2_z2_w2, x2_y2_z2_w2, 1, 1, 1, 1);
+				v128_t z2_z2_z2_z2 = wasm_i32x4_shuffle(x2_y2_z2_w2, x2_y2_z2_w2, 2, 2, 2, 2);
+				v128_t x2y2_0_0_0 = wasm_f32x4_add(x2_y2_z2_w2, y2_y2_y2_y2);
+				v128_t x2y2z2_0_0_0 = wasm_f32x4_add(x2y2_0_0_0, z2_z2_z2_z2);
+				return wasm_f32x4_extract_lane(x2y2z2_0_0_0, 0);
 #elif defined(RTM_NEON_INTRINSICS)
 				float32x4_t x2_y2_z2_w2 = vmulq_f32(lhs, rhs);
 				float32x2_t x2_y2 = vget_low_f32(x2_y2_z2_w2);
@@ -1183,322 +1699,435 @@ namespace rtm
 #endif
 			}
 
-#if defined(RTM_SSE2_INTRINSICS)
-			RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE RTM_SIMD_CALL operator scalarf() const RTM_NO_EXCEPT
-			{
-				__m128 x2_y2_z2_w2 = _mm_mul_ps(lhs, rhs);
-				__m128 y2_0_0_0 = _mm_shuffle_ps(x2_y2_z2_w2, x2_y2_z2_w2, _MM_SHUFFLE(0, 0, 0, 1));
-				__m128 x2y2_0_0_0 = _mm_add_ss(x2_y2_z2_w2, y2_0_0_0);
-				__m128 z2_0_0_0 = _mm_shuffle_ps(x2_y2_z2_w2, x2_y2_z2_w2, _MM_SHUFFLE(0, 0, 0, 2));
-				return scalarf{ _mm_add_ss(x2y2_0_0_0, z2_0_0_0) };
-			}
-#endif
-
-			RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE RTM_SIMD_CALL operator vector4f() const RTM_NO_EXCEPT
-			{
-#if defined(RTM_SSE4_INTRINSICS) && 0
-				// SSE4 dot product instruction isn't precise enough
-				return _mm_cvtss_f32(_mm_dp_ps(lhs, rhs, 0xFF));
-#elif defined(RTM_SSE2_INTRINSICS)
-				__m128 x2_y2_z2_w2 = _mm_mul_ps(lhs, rhs);
-				__m128 y2_0_0_0 = _mm_shuffle_ps(x2_y2_z2_w2, x2_y2_z2_w2, _MM_SHUFFLE(0, 0, 0, 1));
-				__m128 x2y2_0_0_0 = _mm_add_ss(x2_y2_z2_w2, y2_0_0_0);
-				__m128 z2_0_0_0 = _mm_shuffle_ps(x2_y2_z2_w2, x2_y2_z2_w2, _MM_SHUFFLE(0, 0, 0, 2));
-				__m128 x2y2z2_0_0_0 = _mm_add_ss(x2y2_0_0_0, z2_0_0_0);
-				return _mm_shuffle_ps(x2y2z2_0_0_0, x2y2z2_0_0_0, _MM_SHUFFLE(0, 0, 0, 0));
-#elif defined(RTM_NEON_INTRINSICS)
-				float32x4_t x2_y2_z2_w2 = vmulq_f32(lhs, rhs);
-				float32x2_t x2_y2 = vget_low_f32(x2_y2_z2_w2);
-				float32x2_t z2_w2 = vget_high_f32(x2_y2_z2_w2);
-				float32x2_t x2y2_x2y2 = vpadd_f32(x2_y2, x2_y2);
-				float32x2_t z2_z2 = vdup_lane_f32(z2_w2, 0);
-				float32x2_t x2y2z2_x2y2z2 = vadd_f32(x2y2_x2y2, z2_z2);
-				return vdupq_lane_f32(x2y2z2_x2y2z2, 0);
-#else
-				scalarf result = *this;
-				return vector_set(result);
-#endif
-			}
-
 			vector4f lhs;
 			vector4f rhs;
 		};
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// 3D dot product: lhs . rhs
-	//////////////////////////////////////////////////////////////////////////
+	/// 3D dot product: lhs . rhs
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE constexpr rtm_impl::vector4f_vector_dot3 RTM_SIMD_CALL vector_dot3(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 		return rtm_impl::vector4f_vector_dot3{ lhs, rhs };
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns the squared length/norm of the vector4.
-	//////////////////////////////////////////////////////////////////////////
+	/// 3D dot product: lhs . rhs
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE scalarf RTM_SIMD_CALL vector_dot3_as_scalar(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
+	{
+#if defined(RTM_SSE2_INTRINSICS)
+		__m128 x2_y2_z2_w2 = _mm_mul_ps(lhs, rhs);
+		__m128 y2_0_0_0 = _mm_shuffle_ps(x2_y2_z2_w2, x2_y2_z2_w2, _MM_SHUFFLE(0, 0, 0, 1));
+		__m128 x2y2_0_0_0 = _mm_add_ss(x2_y2_z2_w2, y2_0_0_0);
+		__m128 z2_0_0_0 = _mm_shuffle_ps(x2_y2_z2_w2, x2_y2_z2_w2, _MM_SHUFFLE(0, 0, 0, 2));
+		return scalarf{ _mm_add_ss(x2y2_0_0_0, z2_0_0_0) };
+#else
+		return vector_dot3(lhs, rhs);
+#endif
+	}
+
+	/// 3D dot product: lhs . rhs
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_dot3_as_vector(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
+	{
+#if defined(RTM_SSE4_INTRINSICS) && 0
+		// SSE4 dot product instruction appears slower on Zen2, is it the case elsewhere as well?
+		return _mm_cvtss_f32(_mm_dp_ps(lhs, rhs, 0xFF));
+#elif defined(RTM_SSE2_INTRINSICS)
+		__m128 x2_y2_z2_w2 = _mm_mul_ps(lhs, rhs);
+		__m128 y2_0_0_0 = _mm_shuffle_ps(x2_y2_z2_w2, x2_y2_z2_w2, _MM_SHUFFLE(0, 0, 0, 1));
+		__m128 x2y2_0_0_0 = _mm_add_ss(x2_y2_z2_w2, y2_0_0_0);
+		__m128 z2_0_0_0 = _mm_shuffle_ps(x2_y2_z2_w2, x2_y2_z2_w2, _MM_SHUFFLE(0, 0, 0, 2));
+		__m128 x2y2z2_0_0_0 = _mm_add_ss(x2y2_0_0_0, z2_0_0_0);
+		return _mm_shuffle_ps(x2y2z2_0_0_0, x2y2z2_0_0_0, _MM_SHUFFLE(0, 0, 0, 0));
+#elif defined(RTM_WASM128_INTRINSICS)
+		v128_t x2_y2_z2_w2 = wasm_f32x4_mul(lhs, rhs);
+		v128_t x2_x2_x2_x2 = wasm_i32x4_shuffle(x2_y2_z2_w2, x2_y2_z2_w2, 0, 0, 0, 0);
+		v128_t y2_y2_y2_y2 = wasm_i32x4_shuffle(x2_y2_z2_w2, x2_y2_z2_w2, 1, 1, 1, 1);
+		v128_t z2_z2_z2_z2 = wasm_i32x4_shuffle(x2_y2_z2_w2, x2_y2_z2_w2, 2, 2, 2, 2);
+		v128_t x2y2_x2y2_x2y2_x2y2 = wasm_f32x4_add(x2_x2_x2_x2, y2_y2_y2_y2);
+		return wasm_f32x4_add(x2y2_x2y2_x2y2_x2y2, z2_z2_z2_z2);
+#elif defined(RTM_NEON64_INTRINSICS)
+		float32x4_t x2_y2_z2_w2 = vmulq_f32(lhs, rhs);
+		float32x4_t x2_y2_z2 = vsetq_lane_f32(0.0F, x2_y2_z2_w2, 3);
+		float32x4_t x2y2_z2_x2y2_z2 = vpaddq_f32(x2_y2_z2, x2_y2_z2);
+		float32x4_t x2y2z2_x2y2z2_x2y2z2_x2y2z2 = vpaddq_f32(x2y2_z2_x2y2_z2, x2y2_z2_x2y2_z2);
+		return x2y2z2_x2y2z2_x2y2z2_x2y2z2;
+#elif defined(RTM_NEON_INTRINSICS)
+		float32x4_t x2_y2_z2_w2 = vmulq_f32(lhs, rhs);
+		float32x2_t x2_y2 = vget_low_f32(x2_y2_z2_w2);
+		float32x2_t z2_w2 = vget_high_f32(x2_y2_z2_w2);
+		float32x2_t x2y2_x2y2 = vpadd_f32(x2_y2, x2_y2);
+		float32x2_t z2_z2 = vdup_lane_f32(z2_w2, 0);
+		float32x2_t x2y2z2_x2y2z2 = vadd_f32(x2y2_x2y2, z2_z2);
+		return vdupq_lane_f32(x2y2z2_x2y2z2, 0);
+#else
+		return vector_set(vector_dot3_as_scalar(lhs, rhs));
+#endif
+	}
+
+	/// Returns the squared length/norm of the vector4.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE constexpr rtm_impl::vector4f_vector_dot RTM_SIMD_CALL vector_length_squared(vector4f_arg0 input) RTM_NO_EXCEPT
 	{
 		return rtm_impl::vector4f_vector_dot{ input, input };
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns the squared length/norm of the vector3.
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns the squared length/norm of the vector4.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE scalarf RTM_SIMD_CALL vector_length_squared_as_scalar(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+		return vector_dot_as_scalar(input, input);
+	}
+
+	/// Returns the squared length/norm of the vector4.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_length_squared_as_vector(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+		return vector_dot_as_vector(input, input);
+	}
+
+	/// Returns the squared length/norm of the vector2.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE constexpr rtm_impl::vector4f_vector_dot2 RTM_SIMD_CALL vector_length_squared2(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+		return rtm_impl::vector4f_vector_dot2{ input, input };
+	}
+
+	/// Returns the squared length/norm of the vector2.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE scalarf RTM_SIMD_CALL vector_length_squared2_as_scalar(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+		return vector_dot2_as_scalar(input, input);
+	}
+
+	/// Returns the squared length/norm of the vector2.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_length_squared2_as_vector(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+		return vector_dot2_as_vector(input, input);
+	}
+
+	/// Returns the squared length/norm of the vector3.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE constexpr rtm_impl::vector4f_vector_dot3 RTM_SIMD_CALL vector_length_squared3(vector4f_arg0 input) RTM_NO_EXCEPT
 	{
 		return rtm_impl::vector4f_vector_dot3{ input, input };
 	}
 
+	/// Returns the squared length/norm of the vector3.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE scalarf RTM_SIMD_CALL vector_length_squared3_as_scalar(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+		return vector_dot3_as_scalar(input, input);
+	}
+
+	/// Returns the squared length/norm of the vector3.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_length_squared3_as_vector(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+		return vector_dot3_as_vector(input, input);
+	}
+
 	namespace rtm_impl
 	{
-		//////////////////////////////////////////////////////////////////////////
 		// This is a helper struct to allow a single consistent API between
 		// various vector types when the semantics are identical but the return
 		// type differs. Implicit coercion is used to return the desired value
 		// at the call site.
-		//////////////////////////////////////////////////////////////////////////
 		struct vector4f_vector_length
 		{
 			RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE RTM_SIMD_CALL operator float() const RTM_NO_EXCEPT
 			{
-				const scalarf len_sq = vector_length_squared(input);
+				const scalarf len_sq = vector_length_squared_as_scalar(input);
 				return scalar_cast(scalar_sqrt(len_sq));
 			}
-
-#if defined(RTM_SSE2_INTRINSICS)
-			RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE RTM_SIMD_CALL operator scalarf() const RTM_NO_EXCEPT
-			{
-				const scalarf len_sq = vector_length_squared(input);
-				return scalar_sqrt(len_sq);
-			}
-#endif
 
 			vector4f input;
 		};
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns the length/norm of the vector4.
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns the length/norm of the vector4.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE constexpr rtm_impl::vector4f_vector_length RTM_SIMD_CALL vector_length(vector4f_arg0 input) RTM_NO_EXCEPT
 	{
 		return rtm_impl::vector4f_vector_length{ input };
 	}
 
+	/// Returns the length/norm of the vector4.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE scalarf RTM_SIMD_CALL vector_length_as_scalar(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+		const scalarf len_sq = vector_length_squared_as_scalar(input);
+		return scalar_sqrt(len_sq);
+	}
+
 	namespace rtm_impl
 	{
-		//////////////////////////////////////////////////////////////////////////
 		// This is a helper struct to allow a single consistent API between
 		// various vector types when the semantics are identical but the return
 		// type differs. Implicit coercion is used to return the desired value
 		// at the call site.
-		//////////////////////////////////////////////////////////////////////////
 		struct vector4f_vector_length3
 		{
 			RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE RTM_SIMD_CALL operator float() const RTM_NO_EXCEPT
 			{
-				const scalarf len_sq = vector_length_squared3(input);
+				const scalarf len_sq = vector_length_squared3_as_scalar(input);
 				return scalar_cast(scalar_sqrt(len_sq));
 			}
-
-#if defined(RTM_SSE2_INTRINSICS)
-			RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE RTM_SIMD_CALL operator scalarf() const RTM_NO_EXCEPT
-			{
-				const scalarf len_sq = vector_length_squared3(input);
-				return scalar_sqrt(len_sq);
-			}
-#endif
 
 			vector4f input;
 		};
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns the length/norm of the vector3.
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns the length/norm of the vector3.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE constexpr rtm_impl::vector4f_vector_length3 RTM_SIMD_CALL vector_length3(vector4f_arg0 input) RTM_NO_EXCEPT
 	{
 		return rtm_impl::vector4f_vector_length3{ input };
 	}
 
+	/// Returns the length/norm of the vector3.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE scalarf RTM_SIMD_CALL vector_length3_as_scalar(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+		const scalarf len_sq = vector_length_squared3_as_scalar(input);
+		return scalar_sqrt(len_sq);
+	}
+
 	namespace rtm_impl
 	{
-		//////////////////////////////////////////////////////////////////////////
 		// This is a helper struct to allow a single consistent API between
 		// various vector types when the semantics are identical but the return
 		// type differs. Implicit coercion is used to return the desired value
 		// at the call site.
-		//////////////////////////////////////////////////////////////////////////
 		struct vector4f_vector_length_reciprocal
 		{
 			RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE RTM_SIMD_CALL operator float() const RTM_NO_EXCEPT
 			{
-				const scalarf len_sq = vector_length_squared(input);
+				const scalarf len_sq = vector_length_squared_as_scalar(input);
 				return scalar_cast(scalar_sqrt_reciprocal(len_sq));
 			}
-
-#if defined(RTM_SSE2_INTRINSICS)
-			RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE RTM_SIMD_CALL operator scalarf() const RTM_NO_EXCEPT
-			{
-				const scalarf len_sq = vector_length_squared(input);
-				return scalar_sqrt_reciprocal(len_sq);
-			}
-#endif
 
 			vector4f input;
 		};
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns the reciprocal length/norm of the vector4.
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns the reciprocal length/norm of the vector4.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE constexpr rtm_impl::vector4f_vector_length_reciprocal RTM_SIMD_CALL vector_length_reciprocal(vector4f_arg0 input) RTM_NO_EXCEPT
 	{
 		return rtm_impl::vector4f_vector_length_reciprocal{ input };
 	}
 
+	/// Returns the reciprocal length/norm of the vector4.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE scalarf RTM_SIMD_CALL vector_length_reciprocal_as_scalar(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+		const scalarf len_sq = vector_length_squared_as_scalar(input);
+		return scalar_sqrt_reciprocal(len_sq);
+	}
+
 	namespace rtm_impl
 	{
-		//////////////////////////////////////////////////////////////////////////
 		// This is a helper struct to allow a single consistent API between
 		// various vector types when the semantics are identical but the return
 		// type differs. Implicit coercion is used to return the desired value
 		// at the call site.
-		//////////////////////////////////////////////////////////////////////////
-		struct vector4f_vector_length_reciprocal3
+		struct vector4f_vector_length_reciprocal2
 		{
 			RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE RTM_SIMD_CALL operator float() const RTM_NO_EXCEPT
 			{
-				const scalarf len_sq = vector_length_squared3(input);
+				const scalarf len_sq = vector_length_squared2_as_scalar(input);
 				return scalar_cast(scalar_sqrt_reciprocal(len_sq));
 			}
-
-#if defined(RTM_SSE2_INTRINSICS)
-			RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE RTM_SIMD_CALL operator scalarf() const RTM_NO_EXCEPT
-			{
-				const scalarf len_sq = vector_length_squared3(input);
-				return scalar_sqrt_reciprocal(len_sq);
-			}
-#endif
 
 			vector4f input;
 		};
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns the reciprocal length/norm of the vector3.
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns the reciprocal length/norm of the vector2.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE constexpr rtm_impl::vector4f_vector_length_reciprocal2 RTM_SIMD_CALL vector_length_reciprocal2(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+		return rtm_impl::vector4f_vector_length_reciprocal2{ input };
+	}
+
+	/// Returns the reciprocal length/norm of the vector2.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE scalarf RTM_SIMD_CALL vector_length_reciprocal2_as_scalar(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+		const scalarf len_sq = vector_length_squared2_as_scalar(input);
+		return scalar_sqrt_reciprocal(len_sq);
+	}
+
+	namespace rtm_impl
+	{
+		// This is a helper struct to allow a single consistent API between
+		// various vector types when the semantics are identical but the return
+		// type differs. Implicit coercion is used to return the desired value
+		// at the call site.
+		struct vector4f_vector_length_reciprocal3
+		{
+			RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE RTM_SIMD_CALL operator float() const RTM_NO_EXCEPT
+			{
+				const scalarf len_sq = vector_length_squared3_as_scalar(input);
+				return scalar_cast(scalar_sqrt_reciprocal(len_sq));
+			}
+
+			vector4f input;
+		};
+	}
+
+	/// Returns the reciprocal length/norm of the vector3.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE constexpr rtm_impl::vector4f_vector_length_reciprocal3 RTM_SIMD_CALL vector_length_reciprocal3(vector4f_arg0 input) RTM_NO_EXCEPT
 	{
 		return rtm_impl::vector4f_vector_length_reciprocal3{ input };
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns the distance between two 3D points.
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns the reciprocal length/norm of the vector3.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE scalarf RTM_SIMD_CALL vector_length_reciprocal3_as_scalar(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+		const scalarf len_sq = vector_length_squared3_as_scalar(input);
+		return scalar_sqrt_reciprocal(len_sq);
+	}
+
+	/// Returns the distance between two 3D points.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE rtm_impl::vector4f_vector_length3 RTM_SIMD_CALL vector_distance3(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 		const vector4f difference = vector_sub(lhs, rhs);
 		return rtm_impl::vector4f_vector_length3{ difference };
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns a normalized vector3.
-	// If the length of the input is not finite or zero, the result is undefined.
-	// For a safe alternative, supply a fallback value and a threshold.
-	//////////////////////////////////////////////////////////////////////////
-	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_normalize3(vector4f_arg0 input) RTM_NO_EXCEPT
+	/// Returns the distance between two 3D points.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE scalarf RTM_SIMD_CALL vector_distance3_as_scalar(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
-		// Reciprocal is more accurate to normalize with
-		const scalarf len_sq = vector_length_squared3(input);
-		return vector_mul(input, scalar_sqrt_reciprocal(len_sq));
+		const vector4f difference = vector_sub(lhs, rhs);
+		return vector_length3_as_scalar(difference);
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns a normalized vector3.
-	// If the length of the input is below the supplied threshold, the
-	// fall back value is returned instead.
-	//////////////////////////////////////////////////////////////////////////
-	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_normalize3(vector4f_arg0 input, vector4f_arg1 fallback, float threshold = 1.0E-8F) RTM_NO_EXCEPT
+	/// Returns the squared distance between two 3D points.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE rtm_impl::vector4f_vector_dot3 RTM_SIMD_CALL vector_distance_squared3(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
-		// Reciprocal is more accurate to normalize with
-		const scalarf len_sq = vector_length_squared3(input);
+		const vector4f difference = vector_sub(lhs, rhs);
+		return rtm_impl::vector4f_vector_dot3{ difference, difference };
+	}
+
+	/// Returns the squared distance between two 3D points.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE scalarf RTM_SIMD_CALL vector_distance_squared3_as_scalar(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
+	{
+		const vector4f difference = vector_sub(lhs, rhs);
+		return vector_length_squared3_as_scalar(difference);
+	}
+
+	// Implementation detail: returns the input divided by the square root of the squared length.
+#if defined(RTM_SSE2_INTRINSICS) || defined(RTM_WASM128_INTRINSICS)
+	// A vector division costs the same as a scalar division on x64.
+	// One division is faster and more accurate than a division followed by a multiplication.
+	#define RTM_IMPL_VECTOR4F_NORMALIZE(input, len_sq) vector_div(input, vector_set(scalar_sqrt(len_sq)))
+#else
+	// On ARM64, the vector division is slower than the scalar division on some processors.
+	// ARMv7 and the scalar code path do not have a vector division.
+	#define RTM_IMPL_VECTOR4F_NORMALIZE(input, len_sq) vector_mul(input, scalar_sqrt_reciprocal(len_sq))
+#endif
+
+	/// Returns a normalized vector2.
+	/// If the length of the input is not finite or zero, the result is undefined.
+	/// For a safe alternative, supply a fallback value and a threshold.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_normalize2(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+		const scalarf len_sq = vector_length_squared2_as_scalar(input);
+		return RTM_IMPL_VECTOR4F_NORMALIZE(input, len_sq);
+	}
+
+	/// Returns a normalized vector2.
+	/// If the length of the input is below the supplied threshold, the
+	/// fall back value is returned instead.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_normalize2(vector4f_arg0 input, vector4f_arg1 fallback, float threshold = 1.0E-8F) RTM_NO_EXCEPT
+	{
+		const scalarf len_sq = vector_length_squared2_as_scalar(input);
 		if (scalar_cast(len_sq) >= threshold)
-			return vector_mul(input, scalar_sqrt_reciprocal(len_sq));
+			return RTM_IMPL_VECTOR4F_NORMALIZE(input, len_sq);
 		else
 			return fallback;
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns per component the fractional part of the input.
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns a normalized vector3.
+	/// If the length of the input is not finite or zero, the result is undefined.
+	/// For a safe alternative, supply a fallback value and a threshold.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_normalize3(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+		const scalarf len_sq = vector_length_squared3_as_scalar(input);
+		return RTM_IMPL_VECTOR4F_NORMALIZE(input, len_sq);
+	}
+
+	/// Returns a normalized vector3.
+	/// If the length of the input is below the supplied threshold, the
+	/// fall back value is returned instead.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_normalize3(vector4f_arg0 input, vector4f_arg1 fallback, float threshold = 1.0E-8F) RTM_NO_EXCEPT
+	{
+		const scalarf len_sq = vector_length_squared3_as_scalar(input);
+		if (scalar_cast(len_sq) >= threshold)
+			return RTM_IMPL_VECTOR4F_NORMALIZE(input, len_sq);
+		else
+			return fallback;
+	}
+
+	/// Returns a normalized vector4.
+	/// If the length of the input is not finite or zero, the result is undefined.
+	/// For a safe alternative, supply a fallback value and a threshold.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_normalize(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+		const scalarf len_sq = vector_length_squared_as_scalar(input);
+		return RTM_IMPL_VECTOR4F_NORMALIZE(input, len_sq);
+	}
+
+	/// Returns a normalized vector4.
+	/// If the length of the input is below the supplied threshold, the
+	/// fall back value is returned instead.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_normalize(vector4f_arg0 input, vector4f_arg1 fallback, float threshold = 1.0E-8F) RTM_NO_EXCEPT
+	{
+		const scalarf len_sq = vector_length_squared_as_scalar(input);
+		if (scalar_cast(len_sq) >= threshold)
+			return RTM_IMPL_VECTOR4F_NORMALIZE(input, len_sq);
+		else
+			return fallback;
+	}
+
+	/// Returns per component the fractional part of the input.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK inline vector4f RTM_SIMD_CALL vector_fraction(vector4f_arg0 input) RTM_NO_EXCEPT
 	{
 		return vector_set(scalar_fraction(vector_get_x(input)), scalar_fraction(vector_get_y(input)), scalar_fraction(vector_get_z(input)), scalar_fraction(vector_get_w(input)));
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Per component multiplication/addition of the three inputs: v2 + (v0 * v1)
-	//////////////////////////////////////////////////////////////////////////
+	/// Per component multiplication/addition of the three inputs: v2 + (v0 * v1)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_mul_add(vector4f_arg0 v0, vector4f_arg1 v1, vector4f_arg2 v2) RTM_NO_EXCEPT
 	{
 		return RTM_VECTOR4F_MULV_ADD(v0, v1, v2);
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Per component multiplication/addition of the three inputs: v2 + (v0 * s1)
-	//////////////////////////////////////////////////////////////////////////
+	/// Per component multiplication/addition of the three inputs: v2 + (v0 * s1)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_mul_add(vector4f_arg0 v0, float s1, vector4f_arg2 v2) RTM_NO_EXCEPT
 	{
 		return RTM_VECTOR4F_MULS_ADD(v0, s1, v2);
 	}
 
 #if defined(RTM_SSE2_INTRINSICS)
-	//////////////////////////////////////////////////////////////////////////
-	// Per component multiplication/addition of the three inputs: v2 + (v0 * s1)
-	//////////////////////////////////////////////////////////////////////////
+	/// Per component multiplication/addition of the three inputs: v2 + (v0 * s1)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_mul_add(vector4f_arg0 v0, scalarf_arg1 s1, vector4f_arg2 v2) RTM_NO_EXCEPT
 	{
 		return vector_add(vector_mul(v0, s1), v2);
 	}
 #endif
 
-	//////////////////////////////////////////////////////////////////////////
-	// Per component negative multiplication/subtraction of the three inputs: -((v0 * v1) - v2)
-	// This is mathematically equivalent to: v2 - (v0 * v1)
-	//////////////////////////////////////////////////////////////////////////
+	/// Per component negative multiplication/subtraction of the three inputs: -((v0 * v1) - v2)
+	/// This is mathematically equivalent to: v2 - (v0 * v1)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_neg_mul_sub(vector4f_arg0 v0, vector4f_arg1 v1, vector4f_arg2 v2) RTM_NO_EXCEPT
 	{
 		return RTM_VECTOR4F_NEG_MULV_SUB(v0, v1, v2);
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Per component negative multiplication/subtraction of the three inputs: -((v0 * s1) - v2)
-	// This is mathematically equivalent to: v2 - (v0 * s1)
-	//////////////////////////////////////////////////////////////////////////
+	/// Per component negative multiplication/subtraction of the three inputs: -((v0 * s1) - v2)
+	/// This is mathematically equivalent to: v2 - (v0 * s1)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_neg_mul_sub(vector4f_arg0 v0, float s1, vector4f_arg2 v2) RTM_NO_EXCEPT
 	{
 		return RTM_VECTOR4F_NEG_MULS_SUB(v0, s1, v2);
 	}
 
 #if defined(RTM_SSE2_INTRINSICS)
-	//////////////////////////////////////////////////////////////////////////
-	// Per component negative multiplication/subtraction of the three inputs: -((v0 * s1) - v2)
-	// This is mathematically equivalent to: v2 - (v0 * s1)
-	//////////////////////////////////////////////////////////////////////////
+	/// Per component negative multiplication/subtraction of the three inputs: -((v0 * s1) - v2)
+	/// This is mathematically equivalent to: v2 - (v0 * s1)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_neg_mul_sub(vector4f_arg0 v0, scalarf_arg1 s1, vector4f_arg2 v2) RTM_NO_EXCEPT
 	{
 		return vector_sub(v2, vector_mul(v0, s1));
 	}
 #endif
 
-	//////////////////////////////////////////////////////////////////////////
-	// Per component linear interpolation of the two inputs at the specified alpha.
-	// The formula used is: ((1.0 - alpha) * start) + (alpha * end).
-	// Interpolation is stable and will return 'start' when alpha is 0.0 and 'end' when it is 1.0.
-	// This is the same instruction count when FMA is present but it might be slightly slower
-	// due to the extra multiplication compared to: start + (alpha * (end - start)).
-	//////////////////////////////////////////////////////////////////////////
+	/// Per component linear interpolation of the two inputs at the specified alpha.
+	/// The formula used is: ((1.0 - alpha) * start) + (alpha * end).
+	/// Interpolation is stable and will return 'start' when alpha is 0.0 and 'end' when it is 1.0.
+	/// This is the same instruction count when FMA is present but it might be slightly slower
+	/// due to the extra multiplication compared to: start + (alpha * (end - start)).
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_lerp(vector4f_arg0 start, vector4f_arg1 end, float alpha) RTM_NO_EXCEPT
 	{
 		// ((1.0 - alpha) * start) + (alpha * end) == (start - alpha * start) + (alpha * end)
@@ -1506,13 +2135,11 @@ namespace rtm
 	}
 
 #if defined(RTM_SSE2_INTRINSICS)
-	//////////////////////////////////////////////////////////////////////////
-	// Per component linear interpolation of the two inputs at the specified alpha.
-	// The formula used is: ((1.0 - alpha) * start) + (alpha * end).
-	// Interpolation is stable and will return 'start' when alpha is 0.0 and 'end' when it is 1.0.
-	// This is the same instruction count when FMA is present but it might be slightly slower
-	// due to the extra multiplication compared to: start + (alpha * (end - start)).
-	//////////////////////////////////////////////////////////////////////////
+	/// Per component linear interpolation of the two inputs at the specified alpha.
+	/// The formula used is: ((1.0 - alpha) * start) + (alpha * end).
+	/// Interpolation is stable and will return 'start' when alpha is 0.0 and 'end' when it is 1.0.
+	/// This is the same instruction count when FMA is present but it might be slightly slower
+	/// due to the extra multiplication compared to: start + (alpha * (end - start)).
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_lerp(vector4f_arg0 start, vector4f_arg1 end, scalarf_arg2 alpha) RTM_NO_EXCEPT
 	{
 		// ((1.0 - alpha) * start) + (alpha * end) == (start - alpha * start) + (alpha * end)
@@ -1521,103 +2148,122 @@ namespace rtm
 	}
 #endif
 
-	//////////////////////////////////////////////////////////////////////////
-	// Per component linear interpolation of the two inputs at the specified alpha.
-	// The formula used is: ((1.0 - alpha) * start) + (alpha * end).
-	// Interpolation is stable and will return 'start' when alpha is 0.0 and 'end' when it is 1.0.
-	// This is the same instruction count when FMA is present but it might be slightly slower
-	// due to the extra multiplication compared to: start + (alpha * (end - start)).
-	//////////////////////////////////////////////////////////////////////////
+	/// Per component linear interpolation of the two inputs at the specified alpha.
+	/// The formula used is: ((1.0 - alpha) * start) + (alpha * end).
+	/// Interpolation is stable and will return 'start' when alpha is 0.0 and 'end' when it is 1.0.
+	/// This is the same instruction count when FMA is present but it might be slightly slower
+	/// due to the extra multiplication compared to: start + (alpha * (end - start)).
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_lerp(vector4f_arg0 start, vector4f_arg1 end, vector4f_arg2 alpha) RTM_NO_EXCEPT
 	{
 		// ((1.0 - alpha) * start) + (alpha * end) == (start - alpha * start) + (alpha * end)
 		return vector_mul_add(end, alpha, vector_neg_mul_sub(start, alpha, start));
 	}
 
+	/// \}
 
-
-	//////////////////////////////////////////////////////////////////////////
-	// Comparisons and masking
-	//////////////////////////////////////////////////////////////////////////
 
 
 	//////////////////////////////////////////////////////////////////////////
-	// Returns per component ~0 if equal, otherwise 0: lhs == rhs ? ~0 : 0
+	/// \name Comparisons and masking
+	/// \{
 	//////////////////////////////////////////////////////////////////////////
+
+
+	/// Returns per component ~0 if equal, otherwise 0: lhs == rhs ? ~0 : 0
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE mask4f RTM_SIMD_CALL vector_equal(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		return _mm_cmpeq_ps(lhs, rhs);
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_f32x4_eq(lhs, rhs);
 #elif defined(RTM_NEON_INTRINSICS)
-		return vreinterpretq_f32_u32(vceqq_f32(lhs, rhs));
+		return vceqq_f32(lhs, rhs);
 #else
 		return mask4f{ rtm_impl::get_mask_value(lhs.x == rhs.x), rtm_impl::get_mask_value(lhs.y == rhs.y), rtm_impl::get_mask_value(lhs.z == rhs.z), rtm_impl::get_mask_value(lhs.w == rhs.w) };
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns per component ~0 if less than, otherwise 0: lhs < rhs ? ~0 : 0
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns per component ~0 if not equal, otherwise 0: lhs != rhs ? ~0 : 0
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE mask4f RTM_SIMD_CALL vector_not_equal(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
+	{
+#if defined(RTM_SSE2_INTRINSICS)
+		return _mm_cmpneq_ps(lhs, rhs);
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_f32x4_ne(lhs, rhs);
+#elif defined(RTM_NEON_INTRINSICS)
+		return vmvnq_u32(vceqq_f32(lhs, rhs));
+#else
+		return mask4f{ rtm_impl::get_mask_value(lhs.x != rhs.x), rtm_impl::get_mask_value(lhs.y != rhs.y), rtm_impl::get_mask_value(lhs.z != rhs.z), rtm_impl::get_mask_value(lhs.w != rhs.w) };
+#endif
+	}
+
+	/// Returns per component ~0 if less than, otherwise 0: lhs < rhs ? ~0 : 0
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE mask4f RTM_SIMD_CALL vector_less_than(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		return _mm_cmplt_ps(lhs, rhs);
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_f32x4_lt(lhs, rhs);
 #elif defined(RTM_NEON_INTRINSICS)
-		return vreinterpretq_f32_u32(vcltq_f32(lhs, rhs));
+		return vcltq_f32(lhs, rhs);
 #else
 		return mask4f{ rtm_impl::get_mask_value(lhs.x < rhs.x), rtm_impl::get_mask_value(lhs.y < rhs.y), rtm_impl::get_mask_value(lhs.z < rhs.z), rtm_impl::get_mask_value(lhs.w < rhs.w) };
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns per component ~0 if less equal, otherwise 0: lhs <= rhs ? ~0 : 0
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns per component ~0 if less equal, otherwise 0: lhs <= rhs ? ~0 : 0
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE mask4f RTM_SIMD_CALL vector_less_equal(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		return _mm_cmple_ps(lhs, rhs);
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_f32x4_le(lhs, rhs);
 #elif defined(RTM_NEON_INTRINSICS)
-		return vreinterpretq_f32_u32(vcleq_f32(lhs, rhs));
+		return vcleq_f32(lhs, rhs);
 #else
 		return mask4f{ rtm_impl::get_mask_value(lhs.x <= rhs.x), rtm_impl::get_mask_value(lhs.y <= rhs.y), rtm_impl::get_mask_value(lhs.z <= rhs.z), rtm_impl::get_mask_value(lhs.w <= rhs.w) };
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns per component ~0 if greater than, otherwise 0: lhs > rhs ? ~0 : 0
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns per component ~0 if greater than, otherwise 0: lhs > rhs ? ~0 : 0
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE mask4f RTM_SIMD_CALL vector_greater_than(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		return _mm_cmpgt_ps(lhs, rhs);
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_f32x4_gt(lhs, rhs);
 #elif defined(RTM_NEON_INTRINSICS)
-		return vreinterpretq_f32_u32(vcgtq_f32(lhs, rhs));
+		return vcgtq_f32(lhs, rhs);
 #else
 		return mask4f{ rtm_impl::get_mask_value(lhs.x > rhs.x), rtm_impl::get_mask_value(lhs.y > rhs.y), rtm_impl::get_mask_value(lhs.z > rhs.z), rtm_impl::get_mask_value(lhs.w > rhs.w) };
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns per component ~0 if greater equal, otherwise 0: lhs >= rhs ? ~0 : 0
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns per component ~0 if greater equal, otherwise 0: lhs >= rhs ? ~0 : 0
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE mask4f RTM_SIMD_CALL vector_greater_equal(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		return _mm_cmpge_ps(lhs, rhs);
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_f32x4_ge(lhs, rhs);
 #elif defined(RTM_NEON_INTRINSICS)
-		return vreinterpretq_f32_u32(vcgeq_f32(lhs, rhs));
+		return vcgeq_f32(lhs, rhs);
 #else
 		return mask4f{ rtm_impl::get_mask_value(lhs.x >= rhs.x), rtm_impl::get_mask_value(lhs.y >= rhs.y), rtm_impl::get_mask_value(lhs.z >= rhs.z), rtm_impl::get_mask_value(lhs.w >= rhs.w) };
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if all 4 components are less than, otherwise false: all(lhs.xyzw < rhs.xyzw)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if all 4 components are less than, otherwise false: all(lhs.xyzw < rhs.xyzw)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_all_less_than(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		const __m128 mask = _mm_cmplt_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ALL_TRUE(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_lt(lhs, rhs);
 
 		bool result;
 		RTM_MASK4F_ALL_TRUE(mask, result);
@@ -1633,13 +2279,17 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if all [xy] components are less than, otherwise false: all(lhs.xy < rhs.xy)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if all [xy] components are less than, otherwise false: all(lhs.xy < rhs.xy)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_all_less_than2(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		const __m128 mask = _mm_cmplt_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ALL_TRUE2(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_lt(lhs, rhs);
 
 		bool result;
 		RTM_MASK4F_ALL_TRUE2(mask, result);
@@ -1655,13 +2305,17 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if all [xyz] components are less than, otherwise false: all(lhs.xyz < rhs.xyz)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if all [xyz] components are less than, otherwise false: all(lhs.xyz < rhs.xyz)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_all_less_than3(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		const __m128 mask = _mm_cmplt_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ALL_TRUE3(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_lt(lhs, rhs);
 
 		bool result;
 		RTM_MASK4F_ALL_TRUE3(mask, result);
@@ -1677,13 +2331,17 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if any 4 components are less than, otherwise false: any(lhs.xyzw < rhs.xyzw)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if any 4 components are less than, otherwise false: any(lhs.xyzw < rhs.xyzw)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_any_less_than(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		const __m128 mask = _mm_cmplt_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ANY_TRUE(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_lt(lhs, rhs);
 
 		bool result;
 		RTM_MASK4F_ANY_TRUE(mask, result);
@@ -1699,13 +2357,17 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if any [xy] components are less than, otherwise false: any(lhs.xy < rhs.xy)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if any [xy] components are less than, otherwise false: any(lhs.xy < rhs.xy)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_any_less_than2(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		const __m128 mask = _mm_cmplt_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ANY_TRUE2(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_lt(lhs, rhs);
 
 		bool result;
 		RTM_MASK4F_ANY_TRUE2(mask, result);
@@ -1721,13 +2383,17 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if any [xyz] components are less than, otherwise false: any(lhs.xyz < rhs.xyz)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if any [xyz] components are less than, otherwise false: any(lhs.xyz < rhs.xyz)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_any_less_than3(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		const __m128 mask = _mm_cmplt_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ANY_TRUE3(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_lt(lhs, rhs);
 
 		bool result;
 		RTM_MASK4F_ANY_TRUE3(mask, result);
@@ -1743,13 +2409,17 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if all 4 components are less equal, otherwise false: all(lhs.xyzw <= rhs.xyzw)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if all 4 components are less equal, otherwise false: all(lhs.xyzw <= rhs.xyzw)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_all_less_equal(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		const __m128 mask = _mm_cmple_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ALL_TRUE(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_le(lhs, rhs);
 
 		bool result;
 		RTM_MASK4F_ALL_TRUE(mask, result);
@@ -1765,13 +2435,17 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if all [xy] components are less equal, otherwise false: all(lhs.xy <= rhs.xy)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if all [xy] components are less equal, otherwise false: all(lhs.xy <= rhs.xy)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_all_less_equal2(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		const __m128 mask = _mm_cmple_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ALL_TRUE2(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_le(lhs, rhs);
 
 		bool result;
 		RTM_MASK4F_ALL_TRUE2(mask, result);
@@ -1787,13 +2461,17 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if all [xyz] components are less equal, otherwise false: all(lhs.xyz <= rhs.xyz)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if all [xyz] components are less equal, otherwise false: all(lhs.xyz <= rhs.xyz)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_all_less_equal3(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		const __m128 mask = _mm_cmple_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ALL_TRUE3(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_le(lhs, rhs);
 
 		bool result;
 		RTM_MASK4F_ALL_TRUE3(mask, result);
@@ -1809,13 +2487,17 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if any 4 components are less equal, otherwise false: any(lhs.xyzw <= rhs.xyzw)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if any 4 components are less equal, otherwise false: any(lhs.xyzw <= rhs.xyzw)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_any_less_equal(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		const __m128 mask = _mm_cmple_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ANY_TRUE(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_le(lhs, rhs);
 
 		bool result;
 		RTM_MASK4F_ANY_TRUE(mask, result);
@@ -1831,13 +2513,17 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if any [xy] components are less equal, otherwise false: any(lhs.xy <= rhs.xy)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if any [xy] components are less equal, otherwise false: any(lhs.xy <= rhs.xy)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_any_less_equal2(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		const __m128 mask = _mm_cmple_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ANY_TRUE2(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_le(lhs, rhs);
 
 		bool result;
 		RTM_MASK4F_ANY_TRUE2(mask, result);
@@ -1853,13 +2539,17 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if any [xyz] components are less equal, otherwise false: any(lhs.xyz <= rhs.xyz)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if any [xyz] components are less equal, otherwise false: any(lhs.xyz <= rhs.xyz)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_any_less_equal3(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		const __m128 mask = _mm_cmple_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ANY_TRUE3(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_le(lhs, rhs);
 
 		bool result;
 		RTM_MASK4F_ANY_TRUE3(mask, result);
@@ -1875,13 +2565,17 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if all 4 components are greater than, otherwise false: all(lhs.xyzw > rhs.xyzw)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if all 4 components are greater than, otherwise false: all(lhs.xyzw > rhs.xyzw)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_all_greater_than(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		const __m128 mask = _mm_cmpgt_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ALL_TRUE(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_gt(lhs, rhs);
 
 		bool result;
 		RTM_MASK4F_ALL_TRUE(mask, result);
@@ -1897,13 +2591,17 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if all [xy] components are greater than, otherwise false: all(lhs.xy > rhs.xy)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if all [xy] components are greater than, otherwise false: all(lhs.xy > rhs.xy)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_all_greater_than2(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		const __m128 mask = _mm_cmpgt_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ALL_TRUE2(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_gt(lhs, rhs);
 
 		bool result;
 		RTM_MASK4F_ALL_TRUE2(mask, result);
@@ -1919,13 +2617,17 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if all [xyz] components are greater than, otherwise false: all(lhs.xyz > rhs.xyz)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if all [xyz] components are greater than, otherwise false: all(lhs.xyz > rhs.xyz)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_all_greater_than3(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		const __m128 mask = _mm_cmpgt_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ALL_TRUE3(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_gt(lhs, rhs);
 
 		bool result;
 		RTM_MASK4F_ALL_TRUE3(mask, result);
@@ -1941,13 +2643,17 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if any 4 components are greater than, otherwise false: any(lhs.xyzw > rhs.xyzw)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if any 4 components are greater than, otherwise false: any(lhs.xyzw > rhs.xyzw)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_any_greater_than(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		const __m128 mask = _mm_cmpgt_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ANY_TRUE(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_gt(lhs, rhs);
 
 		bool result;
 		RTM_MASK4F_ANY_TRUE(mask, result);
@@ -1963,13 +2669,17 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if any [xy] components are greater than, otherwise false: any(lhs.xy > rhs.xy)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if any [xy] components are greater than, otherwise false: any(lhs.xy > rhs.xy)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_any_greater_than2(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		const __m128 mask = _mm_cmpgt_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ANY_TRUE2(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_gt(lhs, rhs);
 
 		bool result;
 		RTM_MASK4F_ANY_TRUE2(mask, result);
@@ -1985,13 +2695,17 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if any [xyz] components are greater than, otherwise false: any(lhs.xyz > rhs.xyz)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if any [xyz] components are greater than, otherwise false: any(lhs.xyz > rhs.xyz)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_any_greater_than3(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		const __m128 mask = _mm_cmpgt_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ANY_TRUE3(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_gt(lhs, rhs);
 
 		bool result;
 		RTM_MASK4F_ANY_TRUE3(mask, result);
@@ -2007,13 +2721,17 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if all 4 components are greater equal, otherwise false: all(lhs.xyzw >= rhs.xyzw)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if all 4 components are greater equal, otherwise false: all(lhs.xyzw >= rhs.xyzw)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_all_greater_equal(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		const __m128 mask = _mm_cmpge_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ALL_TRUE(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_ge(lhs, rhs);
 
 		bool result;
 		RTM_MASK4F_ALL_TRUE(mask, result);
@@ -2029,13 +2747,17 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if all [xy] components are greater equal, otherwise false: all(lhs.xy >= rhs.xy)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if all [xy] components are greater equal, otherwise false: all(lhs.xy >= rhs.xy)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_all_greater_equal2(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		const __m128 mask = _mm_cmpge_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ALL_TRUE2(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_ge(lhs, rhs);
 
 		bool result;
 		RTM_MASK4F_ALL_TRUE2(mask, result);
@@ -2051,13 +2773,17 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if all [xyz] components are greater equal, otherwise false: all(lhs.xyz >= rhs.xyz)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if all [xyz] components are greater equal, otherwise false: all(lhs.xyz >= rhs.xyz)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_all_greater_equal3(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		const __m128 mask = _mm_cmpge_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ALL_TRUE3(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_ge(lhs, rhs);
 
 		bool result;
 		RTM_MASK4F_ALL_TRUE3(mask, result);
@@ -2073,13 +2799,17 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if any 4 components are greater equal, otherwise false: any(lhs.xyzw >= rhs.xyzw)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if any 4 components are greater equal, otherwise false: any(lhs.xyzw >= rhs.xyzw)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_any_greater_equal(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		const __m128 mask = _mm_cmpge_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ANY_TRUE(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_ge(lhs, rhs);
 
 		bool result;
 		RTM_MASK4F_ANY_TRUE(mask, result);
@@ -2095,13 +2825,17 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if any [xy] components are greater equal, otherwise false: any(lhs.xy >= rhs.xy)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if any [xy] components are greater equal, otherwise false: any(lhs.xy >= rhs.xy)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_any_greater_equal2(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		const __m128 mask = _mm_cmpge_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ANY_TRUE2(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_ge(lhs, rhs);
 
 		bool result;
 		RTM_MASK4F_ANY_TRUE2(mask, result);
@@ -2117,13 +2851,17 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if any [xyz] components are greater equal, otherwise false: any(lhs.xyz >= rhs.xyz)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if any [xyz] components are greater equal, otherwise false: any(lhs.xyz >= rhs.xyz)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_any_greater_equal3(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		const __m128 mask = _mm_cmpge_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ANY_TRUE3(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_ge(lhs, rhs);
 
 		bool result;
 		RTM_MASK4F_ANY_TRUE3(mask, result);
@@ -2139,13 +2877,17 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if all [xyzw] components are equal, otherwise false: all(lhs.xyzw == rhs.xyzw)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if all [xyzw] components are equal, otherwise false: all(lhs.xyzw == rhs.xyzw)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_all_equal(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		const __m128 mask = _mm_cmpeq_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ALL_TRUE(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_eq(lhs, rhs);
 
 		bool result;
 		RTM_MASK4F_ALL_TRUE(mask, result);
@@ -2161,13 +2903,17 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if all [xy] components are equal, otherwise false: all(lhs.xy == rhs.xy)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if all [xy] components are equal, otherwise false: all(lhs.xy == rhs.xy)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_all_equal2(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		const __m128 mask = _mm_cmpeq_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ALL_TRUE2(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_eq(lhs, rhs);
 
 		bool result;
 		RTM_MASK4F_ALL_TRUE2(mask, result);
@@ -2183,13 +2929,17 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if all [xyz] components are equal, otherwise false: all(lhs.xyz == rhs.xyz)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if all [xyz] components are equal, otherwise false: all(lhs.xyz == rhs.xyz)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_all_equal3(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		const __m128 mask = _mm_cmpeq_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ALL_TRUE3(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_eq(lhs, rhs);
 
 		bool result;
 		RTM_MASK4F_ALL_TRUE3(mask, result);
@@ -2205,13 +2955,17 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if any [xyzw] components are equal, otherwise false: any(lhs.xyzw == rhs.xyzw)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if any [xyzw] components are equal, otherwise false: any(lhs.xyzw == rhs.xyzw)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_any_equal(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		const __m128 mask = _mm_cmpeq_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ANY_TRUE(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_eq(lhs, rhs);
 
 		bool result;
 		RTM_MASK4F_ANY_TRUE(mask, result);
@@ -2227,13 +2981,17 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if any [xy] components are equal, otherwise false: any(lhs.xy == rhs.xy)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if any [xy] components are equal, otherwise false: any(lhs.xy == rhs.xy)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_any_equal2(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		const __m128 mask = _mm_cmpeq_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ANY_TRUE2(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_eq(lhs, rhs);
 
 		bool result;
 		RTM_MASK4F_ANY_TRUE2(mask, result);
@@ -2249,13 +3007,17 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if any [xyz] components are equal, otherwise false: any(lhs.xyz == rhs.xyz)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if any [xyz] components are equal, otherwise false: any(lhs.xyz == rhs.xyz)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_any_equal3(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		const __m128 mask = _mm_cmpeq_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ANY_TRUE3(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_eq(lhs, rhs);
 
 		bool result;
 		RTM_MASK4F_ANY_TRUE3(mask, result);
@@ -2271,57 +3033,234 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if all 4 components are near equal, otherwise false: all(abs(lhs - rhs).xyzw <= threshold)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if all [xyzw] components are not equal, otherwise false: all(lhs.xyzw != rhs.xyzw)
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_all_not_equal(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
+	{
+#if defined(RTM_SSE2_INTRINSICS)
+		const __m128 mask = _mm_cmpneq_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ALL_TRUE(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_ne(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ALL_TRUE(mask, result);
+		return result;
+#elif defined(RTM_NEON_INTRINSICS)
+		const uint32x4_t mask = vmvnq_u32(vceqq_f32(lhs, rhs));
+
+		bool result;
+		RTM_MASK4F_ALL_TRUE(mask, result);
+		return result;
+#else
+		return lhs.x != rhs.x && lhs.y != rhs.y && lhs.z != rhs.z && lhs.w != rhs.w;
+#endif
+	}
+
+	/// Returns true if all [xy] components are not equal, otherwise false: all(lhs.xy != rhs.xy)
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_all_not_equal2(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
+	{
+#if defined(RTM_SSE2_INTRINSICS)
+		const __m128 mask = _mm_cmpneq_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ALL_TRUE2(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_ne(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ALL_TRUE2(mask, result);
+		return result;
+#elif defined(RTM_NEON_INTRINSICS)
+		const uint32x2_t mask = vmvn_u32(vceq_f32(vget_low_f32(lhs), vget_low_f32(rhs)));
+
+		bool result;
+		RTM_MASK2F_ALL_TRUE(mask, result);
+		return result;
+#else
+		return lhs.x != rhs.x && lhs.y != rhs.y;
+#endif
+	}
+
+	/// Returns true if all [xyz] components are not equal, otherwise false: all(lhs.xyz != rhs.xyz)
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_all_not_equal3(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
+	{
+#if defined(RTM_SSE2_INTRINSICS)
+		const __m128 mask = _mm_cmpneq_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ALL_TRUE3(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_ne(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ALL_TRUE3(mask, result);
+		return result;
+#elif defined(RTM_NEON_INTRINSICS)
+		const uint32x4_t mask = vmvnq_u32(vceqq_f32(lhs, rhs));
+
+		bool result;
+		RTM_MASK4F_ALL_TRUE3(mask, result);
+		return result;
+#else
+		return lhs.x != rhs.x && lhs.y != rhs.y && lhs.z != rhs.z;
+#endif
+	}
+
+	/// Returns true if any [xyzw] components are not equal, otherwise false: any(lhs.xyzw != rhs.xyzw)
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_any_not_equal(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
+	{
+#if defined(RTM_SSE2_INTRINSICS)
+		const __m128 mask = _mm_cmpneq_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ANY_TRUE(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_ne(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ANY_TRUE(mask, result);
+		return result;
+#elif defined(RTM_NEON_INTRINSICS)
+		const uint32x4_t mask = vmvnq_u32(vceqq_f32(lhs, rhs));
+
+		bool result;
+		RTM_MASK4F_ANY_TRUE(mask, result);
+		return result;
+#else
+		return lhs.x != rhs.x || lhs.y != rhs.y || lhs.z != rhs.z || lhs.w != rhs.w;
+#endif
+	}
+
+	/// Returns true if any [xy] components are not equal, otherwise false: any(lhs.xy != rhs.xy)
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_any_not_equal2(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
+	{
+#if defined(RTM_SSE2_INTRINSICS)
+		const __m128 mask = _mm_cmpneq_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ANY_TRUE2(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_ne(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ANY_TRUE2(mask, result);
+		return result;
+#elif defined(RTM_NEON_INTRINSICS)
+		const uint32x2_t mask = vmvn_u32(vceq_f32(vget_low_f32(lhs), vget_low_f32(rhs)));
+
+		bool result;
+		RTM_MASK2F_ANY_TRUE(mask, result);
+		return result;
+#else
+		return lhs.x != rhs.x || lhs.y != rhs.y;
+#endif
+	}
+
+	/// Returns true if any [xyz] components are not equal, otherwise false: any(lhs.xyz != rhs.xyz)
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_any_not_equal3(vector4f_arg0 lhs, vector4f_arg1 rhs) RTM_NO_EXCEPT
+	{
+#if defined(RTM_SSE2_INTRINSICS)
+		const __m128 mask = _mm_cmpneq_ps(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ANY_TRUE3(mask, result);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t mask = wasm_f32x4_ne(lhs, rhs);
+
+		bool result;
+		RTM_MASK4F_ANY_TRUE3(mask, result);
+		return result;
+#elif defined(RTM_NEON_INTRINSICS)
+		const uint32x4_t mask = vmvnq_u32(vceqq_f32(lhs, rhs));
+
+		bool result;
+		RTM_MASK4F_ANY_TRUE3(mask, result);
+		return result;
+#else
+		return lhs.x != rhs.x || lhs.y != rhs.y || lhs.z != rhs.z;
+#endif
+	}
+
+	/// Returns true if all 4 components are near equal, otherwise false: all(abs(lhs - rhs).xyzw <= threshold)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_all_near_equal(vector4f_arg0 lhs, vector4f_arg1 rhs, float threshold = 0.00001F) RTM_NO_EXCEPT
 	{
 		return vector_all_less_equal(vector_abs(vector_sub(lhs, rhs)), vector_set(threshold));
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if all [xy] components are near equal, otherwise false: all(abs(lhs - rhs).xy <= threshold)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if all [xy] components are near equal, otherwise false: all(abs(lhs - rhs).xy <= threshold)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_all_near_equal2(vector4f_arg0 lhs, vector4f_arg1 rhs, float threshold = 0.00001F) RTM_NO_EXCEPT
 	{
 		return vector_all_less_equal2(vector_abs(vector_sub(lhs, rhs)), vector_set(threshold));
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if all [xyz] components are near equal, otherwise false: all(abs(lhs - rhs).xyz <= threshold)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if all [xyz] components are near equal, otherwise false: all(abs(lhs - rhs).xyz <= threshold)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_all_near_equal3(vector4f_arg0 lhs, vector4f_arg1 rhs, float threshold = 0.00001F) RTM_NO_EXCEPT
 	{
 		return vector_all_less_equal3(vector_abs(vector_sub(lhs, rhs)), vector_set(threshold));
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if any 4 components are near equal, otherwise false: any(abs(lhs - rhs).xyzw <= threshold)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if any 4 components are near equal, otherwise false: any(abs(lhs - rhs).xyzw <= threshold)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_any_near_equal(vector4f_arg0 lhs, vector4f_arg1 rhs, float threshold = 0.00001F) RTM_NO_EXCEPT
 	{
 		return vector_any_less_equal(vector_abs(vector_sub(lhs, rhs)), vector_set(threshold));
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if any [xy] components are near equal, otherwise false: any(abs(lhs - rhs).xy <= threshold)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if any [xy] components are near equal, otherwise false: any(abs(lhs - rhs).xy <= threshold)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_any_near_equal2(vector4f_arg0 lhs, vector4f_arg1 rhs, float threshold = 0.00001F) RTM_NO_EXCEPT
 	{
 		return vector_any_less_equal2(vector_abs(vector_sub(lhs, rhs)), vector_set(threshold));
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if any [xyz] components are near equal, otherwise false: any(abs(lhs - rhs).xyz <= threshold)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if any [xyz] components are near equal, otherwise false: any(abs(lhs - rhs).xyz <= threshold)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_any_near_equal3(vector4f_arg0 lhs, vector4f_arg1 rhs, float threshold = 0.00001F) RTM_NO_EXCEPT
 	{
 		return vector_any_less_equal3(vector_abs(vector_sub(lhs, rhs)), vector_set(threshold));
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if all 4 components are finite (not NaN/Inf), otherwise false: all(finite(input))
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns per component ~0 if input is finite, otherwise 0: finite(input) ? ~0 : 0
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE mask4f RTM_SIMD_CALL vector_finite(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+#if defined(RTM_SSE2_INTRINSICS)
+		const __m128i abs_mask = _mm_set_epi32(0x7FFFFFFFULL, 0x7FFFFFFFULL, 0x7FFFFFFFULL, 0x7FFFFFFFULL);
+		__m128 abs_input = _mm_and_ps(input, _mm_castsi128_ps(abs_mask));
+
+		const __m128 infinity = _mm_set_ps1(std::numeric_limits<float>::infinity());
+		__m128 is_not_infinity = _mm_cmpneq_ps(abs_input, infinity);
+
+		__m128 is_nan = _mm_cmpneq_ps(input, input);
+
+		__m128 is_finite = _mm_andnot_ps(is_nan, is_not_infinity);
+		return is_finite;
+#elif defined(RTM_WASM128_INTRINSICS)
+		// The absolute value is smaller than infinity only when the input is finite, it is false for NaN
+		const v128_t is_finite = wasm_f32x4_lt(wasm_f32x4_abs(input), wasm_f32x4_splat(std::numeric_limits<float>::infinity()));
+		return is_finite;
+#elif defined(RTM_NEON_INTRINSICS)
+		const float32x4_t abs_input = vabsq_f32(input);
+		const float32x4_t infinity = vdupq_n_f32(std::numeric_limits<float>::infinity());
+		const uint32x4_t is_not_infinity = vmvnq_u32(vceqq_f32(abs_input, infinity));
+		const uint32x4_t is_not_nan = vceqq_f32(input, input);
+		const uint32x4_t is_finite = vandq_u32(is_not_infinity, is_not_nan);
+		return is_finite;
+#else
+		return mask4f{
+			rtm_impl::get_mask_value(scalar_is_finite(vector_get_x(input))),
+			rtm_impl::get_mask_value(scalar_is_finite(vector_get_y(input))),
+			rtm_impl::get_mask_value(scalar_is_finite(vector_get_z(input))),
+			rtm_impl::get_mask_value(scalar_is_finite(vector_get_w(input)))
+			};
+#endif
+	}
+
+	/// Returns true if all 4 components are finite (not NaN/Inf), otherwise false: all(finite(input))
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_is_finite(vector4f_arg0 input) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
@@ -2335,14 +3274,19 @@ namespace rtm
 
 		__m128 is_not_finite = _mm_or_ps(is_infinity, is_nan);
 		return _mm_movemask_ps(is_not_finite) == 0;
+#elif defined(RTM_WASM128_INTRINSICS)
+		// The absolute value is smaller than infinity only when the input is finite, it is false for NaN
+		const v128_t is_finite = wasm_f32x4_lt(wasm_f32x4_abs(input), wasm_f32x4_splat(std::numeric_limits<float>::infinity()));
+
+		bool result;
+		RTM_MASK4F_ALL_TRUE(is_finite, result);
+		return result;
 #else
 		return scalar_is_finite(vector_get_x(input)) && scalar_is_finite(vector_get_y(input)) && scalar_is_finite(vector_get_z(input)) && scalar_is_finite(vector_get_w(input));
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if all [xy] components are finite (not NaN/Inf), otherwise false: all(finite(input))
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if all [xy] components are finite (not NaN/Inf), otherwise false: all(finite(input))
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_is_finite2(vector4f_arg0 input) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
@@ -2356,14 +3300,19 @@ namespace rtm
 
 		__m128 is_not_finite = _mm_or_ps(is_infinity, is_nan);
 		return (_mm_movemask_ps(is_not_finite) & 0x3) == 0;
+#elif defined(RTM_WASM128_INTRINSICS)
+		// The absolute value is smaller than infinity only when the input is finite, it is false for NaN
+		const v128_t is_finite = wasm_f32x4_lt(wasm_f32x4_abs(input), wasm_f32x4_splat(std::numeric_limits<float>::infinity()));
+
+		bool result;
+		RTM_MASK4F_ALL_TRUE2(is_finite, result);
+		return result;
 #else
 		return scalar_is_finite(vector_get_x(input)) && scalar_is_finite(vector_get_y(input));
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns true if all [xyz] components are finite (not NaN/Inf), otherwise false: all(finite(input))
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns true if all [xyz] components are finite (not NaN/Inf), otherwise false: all(finite(input))
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE bool RTM_SIMD_CALL vector_is_finite3(vector4f_arg0 input) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
@@ -2377,46 +3326,99 @@ namespace rtm
 
 		__m128 is_not_finite = _mm_or_ps(is_infinity, is_nan);
 		return (_mm_movemask_ps(is_not_finite) & 0x7) == 0;
+#elif defined(RTM_WASM128_INTRINSICS)
+		// The absolute value is smaller than infinity only when the input is finite, it is false for NaN
+		const v128_t is_finite = wasm_f32x4_lt(wasm_f32x4_abs(input), wasm_f32x4_splat(std::numeric_limits<float>::infinity()));
+
+		bool result;
+		RTM_MASK4F_ALL_TRUE3(is_finite, result);
+		return result;
 #else
 		return scalar_is_finite(vector_get_x(input)) && scalar_is_finite(vector_get_y(input)) && scalar_is_finite(vector_get_z(input));
 #endif
 	}
 
+	/// \}
 
-
-	//////////////////////////////////////////////////////////////////////////
-	// Swizzling, permutations, and mixing
-	//////////////////////////////////////////////////////////////////////////
 
 
 	//////////////////////////////////////////////////////////////////////////
-	// Per component selection depending on the mask: mask != 0 ? if_true : if_false
+	/// \name Swizzling, permutations, and mixing
+	/// \{
 	//////////////////////////////////////////////////////////////////////////
+
+
+	/// Per component selection depending on the mask: mask != 0 ? if_true : if_false
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_select(mask4f_arg0 mask, vector4f_arg1 if_true, vector4f_arg2 if_false) RTM_NO_EXCEPT
 	{
-#if defined(RTM_SSE2_INTRINSICS) || defined(RTM_NEON_INTRINSICS)
+#if defined(RTM_SSE2_INTRINSICS) || defined(RTM_NEON_INTRINSICS) || defined(RTM_WASM128_INTRINSICS)
 		return RTM_VECTOR4F_SELECT(mask, if_true, if_false);
 #else
 		return vector4f{ rtm_impl::select(mask.x, if_true.x, if_false.x), rtm_impl::select(mask.y, if_true.y, if_false.y), rtm_impl::select(mask.z, if_true.z, if_false.z), rtm_impl::select(mask.w, if_true.w, if_false.w) };
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Mixes two inputs and returns the desired components.
-	// [xyzw] indexes into the first input while [abcd] indexes in the second.
-	//////////////////////////////////////////////////////////////////////////
+	/// Mixes two inputs and returns the desired components.
+	/// [xyzw] indexes into the first input while [abcd] indexes in the second.
 	template<mix4 comp0, mix4 comp1, mix4 comp2, mix4 comp3>
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_mix(vector4f_arg0 input0, vector4f_arg1 input1) RTM_NO_EXCEPT
 	{
-#if defined(RTM_SSE4_INTRINSICS)
+		// Exactly input 0
+		if (rtm_impl::static_condition<comp0 == mix4::x && comp1 == mix4::y && comp2 == mix4::z && comp3 == mix4::w>::test())
+			return input0;
+
+		// Exactly input 1
+		if (rtm_impl::static_condition<comp0 == mix4::a && comp1 == mix4::b && comp2 == mix4::c && comp3 == mix4::d>::test())
+			return input1;
+
+#if defined(RTM_SSE2_INTRINSICS)
+		// Instruction costs taken from Agner's instruction tables
+		// Cost:	ops, latency, throughput, execution port
+
+	#if defined(RTM_COMPILER_CLANG) || defined(RTM_COMPILER_GCC)
+		#if RTM_HAS_BUILTIN(__builtin_shufflevector)
+		// GCC/Clang offer a builtin intrinsic to generate optimal assembly for this
+		return __builtin_shufflevector(input0, input1, int(comp0), int(comp1), int(comp2), int(comp3));
+		#endif
+	#endif
+
+	#if defined(RTM_AVX_INTRINSICS)
+		// TODO: AVX introduced the permute instruction (_mm_permute_ps) but on some AMD processors like Zen2
+		// the instruction has much higher latency and a lower reciprocal throughput which makes it a poor fit
+		// On the up side, it allows to load the input directly from memory in a single instruction
+		// but for a function like vector_mix, we cannot assume whether any input is in memory or register
+		// To make a smart choice for this, we would need to know at compile time what processor we are targeting
+		// and this is not available to us. For that reason, I have opted to not implement its support for the
+		// time being.
+	#endif // defined(RTM_AVX_INTRINSICS)
+
+	#if defined(RTM_SSE4_INTRINSICS)
+		// blendps is generally always faster than other instructions and/or it can execute over more ports
+		// AMD Jaguar:	???
+		// AMD Zen 2:	1, 1, 0.33, P013
+		// AMD Zen 4:	1, 1, 0.25, P0123
+
         // Each component comes from the respective position of input 0 or input 1
         if (rtm_impl::static_condition<(comp0 == mix4::a || comp0 == mix4::x) && (comp1 == mix4::b || comp1 == mix4::y) &&
                                        (comp2 == mix4::c || comp2 == mix4::z) && (comp3 == mix4::d || comp3 == mix4::w)>::test())
         {
             constexpr int mask = (comp0 == mix4::a ? 1 : 0) | (comp1 == mix4::b ? 2 : 0) |
                                  (comp2 == mix4::c ? 4 : 0) | (comp3 == mix4::d ? 8 : 0);
+
+		#if defined(RTM_COMPILER_MSVC) && defined(RTM_ARCH_X86) && defined(RTM_AVX_INTRINSICS)
+            // MSVC 19.44 and 19.51 for x86 with AVX remove the blend when the mask is 1 and input1 is zero.
+            // The result is then input0. _mm_move_ss gives the same result as the blend.
+            if (rtm_impl::static_condition<mask == 1>::test())
+                return _mm_move_ss(input0, input1);
+		#endif
+
             return _mm_blend_ps(input0, input1, mask);
         }
+
+		// insertps would otherwise require 2 shuffle instructions
+		// AMD Jaguar:	1, ?, 0.5, FP01
+		// AMD Zen 2:	1, 1, 0.5, P12
+		// AMD Zen 4:	1, 1, 0.33, P123
 
         // First component comes from input 1, others come from the respective positions of input 0
         if (rtm_impl::static_condition<rtm_impl::is_mix_abcd(comp0) && comp1 == mix4::y && comp2 == mix4::z && comp3 == mix4::w>::test())
@@ -2449,9 +3451,114 @@ namespace rtm
         // Fourth component comes from input 0, others come from the respective positions of input 1
         if (rtm_impl::static_condition<comp0 == mix4::a && comp1 == mix4::b && comp2 == mix4::c && rtm_impl::is_mix_xyzw(comp3)>::test())
             return _mm_insert_ps(input1, input0, ((int(comp3) % 4) << 6) | (3 << 4));
-#endif // defined(RTM_SSE4_INTRINSICS)
+	#endif // defined(RTM_SSE4_INTRINSICS)
 
-#if defined(RTM_SSE2_INTRINSICS)
+	#if defined(RTM_SSE3_INTRINSICS)
+		// movs[lh]dup is typically as fast or faster than shufps
+		// AMD Jaguar:	1, 1, 0.5, FP01
+		// AMD Zen 2:	1, 1, 0.5, P12
+		// AMD Zen 4:	1, 1, 0.33, P123
+
+		// Duplicate low elements of input 0
+		if (rtm_impl::static_condition<comp0 == mix4::x && comp1 == mix4::x && comp2 == mix4::z && comp3 == mix4::z>::test())
+			return _mm_moveldup_ps(input0);
+
+		// Duplicate low elements of input 1
+		if (rtm_impl::static_condition<comp0 == mix4::a && comp1 == mix4::a && comp2 == mix4::c && comp3 == mix4::c>::test())
+			return _mm_moveldup_ps(input1);
+
+		// Duplicate high elements of input 0
+		if (rtm_impl::static_condition<comp0 == mix4::y && comp1 == mix4::y && comp2 == mix4::w && comp3 == mix4::w>::test())
+			return _mm_movehdup_ps(input0);
+
+		// Duplicate high elements of input 1
+		if (rtm_impl::static_condition<comp0 == mix4::b && comp1 == mix4::b && comp2 == mix4::d && comp3 == mix4::d>::test())
+			return _mm_movehdup_ps(input1);
+	#endif // defined(RTM_SSE3_INTRINSICS)
+
+		// unpck[hl]ps is typically as fast as shufps
+		// AMD Jaguar:	1, 2, 0.5, FP01
+		// AMD Zen 2:	1, 1, 0.5, P12
+		// AMD Zen 4:	1, 1, 0.33, P123
+
+		// Low words from both inputs are interleaved
+		if (rtm_impl::static_condition<comp0 == mix4::x && comp1 == mix4::a && comp2 == mix4::y && comp3 == mix4::b>::test())
+			return _mm_unpacklo_ps(input0, input1);
+
+		// Low words from both inputs are interleaved
+		if (rtm_impl::static_condition<comp0 == mix4::a && comp1 == mix4::x && comp2 == mix4::b && comp3 == mix4::y>::test())
+			return _mm_unpacklo_ps(input1, input0);
+
+		// Low word from input 0 is interleaved
+		if (rtm_impl::static_condition<comp0 == mix4::x && comp1 == mix4::x && comp2 == mix4::y && comp3 == mix4::y>::test())
+			return _mm_unpacklo_ps(input0, input0);
+
+		// Low word from input 1 is interleaved
+		if (rtm_impl::static_condition<comp0 == mix4::a && comp1 == mix4::a && comp2 == mix4::b && comp3 == mix4::b>::test())
+			return _mm_unpacklo_ps(input1, input1);
+
+		// High words from both inputs are interleaved
+		if (rtm_impl::static_condition<comp0 == mix4::z && comp1 == mix4::c && comp2 == mix4::w && comp3 == mix4::d>::test())
+			return _mm_unpackhi_ps(input0, input1);
+
+		// High words from both inputs are interleaved
+		if (rtm_impl::static_condition<comp0 == mix4::c && comp1 == mix4::z && comp2 == mix4::d && comp3 == mix4::w>::test())
+			return _mm_unpackhi_ps(input1, input0);
+
+		// High word from input 0 is interleaved
+		if (rtm_impl::static_condition<comp0 == mix4::z && comp1 == mix4::z && comp2 == mix4::w && comp3 == mix4::w>::test())
+			return _mm_unpackhi_ps(input0, input0);
+
+		// High word from input 1 is interleaved
+		if (rtm_impl::static_condition<comp0 == mix4::c && comp1 == mix4::c && comp2 == mix4::d && comp3 == mix4::d>::test())
+			return _mm_unpackhi_ps(input1, input1);
+
+#if 0
+		// mov[lh/hl]ps is at times slower than shufps and it can execute on fewer ports
+		// Its usage can be replicated using a single shufps instruction.
+		// For these reasons, we do not use it. Code is left here to document that it was considered.
+		// AMD Jaguar:	1, 2, 2, FP01
+		// AMD Zen 2:	1, 1, 0.5, P12
+		// AMD Zen 4:	1, 1, 0.5, P12
+
+		// Duplicate bottom half of input 0
+		if (rtm_impl::static_condition<comp0 == mix4::x && comp1 == mix4::y && comp2 == mix4::x && comp3 == mix4::y>::test())
+			return _mm_movelh_ps(input0, input0);
+
+		// Duplicate bottom half of input 1
+		if (rtm_impl::static_condition<comp0 == mix4::a && comp1 == mix4::b && comp2 == mix4::a && comp3 == mix4::b>::test())
+			return _mm_movelh_ps(input1, input1);
+
+		// Move bottom half of input 1 to top of input 0
+		if (rtm_impl::static_condition<comp0 == mix4::x && comp1 == mix4::y && comp2 == mix4::a && comp3 == mix4::b>::test())
+			return _mm_movelh_ps(input0, input1);
+
+		// Move bottom half of input 0 to top of input 1
+		if (rtm_impl::static_condition<comp0 == mix4::a && comp1 == mix4::b && comp2 == mix4::x && comp3 == mix4::y>::test())
+			return _mm_movelh_ps(input1, input0);
+
+		// Duplicate top half of input 0
+		if (rtm_impl::static_condition<comp0 == mix4::z && comp1 == mix4::w && comp2 == mix4::z && comp3 == mix4::w>::test())
+			return _mm_movehl_ps(input0, input0);
+
+		// Duplicate top half of input 1
+		if (rtm_impl::static_condition<comp0 == mix4::c && comp1 == mix4::d && comp2 == mix4::c && comp3 == mix4::d>::test())
+			return _mm_movehl_ps(input1, input1);
+
+		// Move top half of input 1 to top of input 0
+		if (rtm_impl::static_condition<comp0 == mix4::z && comp1 == mix4::w && comp2 == mix4::c && comp3 == mix4::d>::test())
+			return _mm_movehl_ps(input1, input0);
+
+		// Move top half of input 0 to top of input 1
+		if (rtm_impl::static_condition<comp0 == mix4::c && comp1 == mix4::d && comp2 == mix4::z && comp3 == mix4::w>::test())
+			return _mm_movehl_ps(input0, input1);
+#endif
+
+		// shufps is the baseline instruction for vector_mix
+		// AMD Jaguar:	1, 2, 0.5, FP01
+		// AMD Zen 2:	1, 1, 0.5, P12
+		// AMD Zen 4:	1, 1, 0.33, P123
+
 		// All four components come from input 0
 		if (rtm_impl::static_condition<rtm_impl::is_mix_xyzw(comp0) && rtm_impl::is_mix_xyzw(comp1) && rtm_impl::is_mix_xyzw(comp2) && rtm_impl::is_mix_xyzw(comp3)>::test())
 			return _mm_shuffle_ps(input0, input0, _MM_SHUFFLE(int(comp3) % 4, int(comp2) % 4, int(comp1) % 4, int(comp0) % 4));
@@ -2468,179 +3575,388 @@ namespace rtm
 		if (rtm_impl::static_condition<rtm_impl::is_mix_abcd(comp0) && rtm_impl::is_mix_abcd(comp1) && rtm_impl::is_mix_xyzw(comp2) && rtm_impl::is_mix_xyzw(comp3)>::test())
 			return _mm_shuffle_ps(input1, input0, _MM_SHUFFLE(int(comp3) % 4, int(comp2) % 4, int(comp1) % 4, int(comp0) % 4));
 
+		// Mixed components
+		if (rtm_impl::static_condition<rtm_impl::is_mix_xyzw(comp0) && rtm_impl::is_mix_xyzw(comp1) && rtm_impl::is_mix_xyzw(comp2) && rtm_impl::is_mix_abcd(comp3)>::test())
+		{
+			const __m128 z0z0w1w1 = _mm_shuffle_ps(input0, input1, _MM_SHUFFLE(int(comp3) % 4, int(comp3) % 4, int(comp2) % 4, int(comp2) % 4));
+			return _mm_shuffle_ps(input0, z0z0w1w1, _MM_SHUFFLE(2, 0, int(comp1) % 4, int(comp0) % 4));
+		}
+
+		// Mixed components
+		if (rtm_impl::static_condition<rtm_impl::is_mix_xyzw(comp0) && rtm_impl::is_mix_xyzw(comp1) && rtm_impl::is_mix_abcd(comp2) && rtm_impl::is_mix_xyzw(comp3)>::test())
+		{
+			const __m128 z1z1w0w0 = _mm_shuffle_ps(input1, input0, _MM_SHUFFLE(int(comp3) % 4, int(comp3) % 4, int(comp2) % 4, int(comp2) % 4));
+			return _mm_shuffle_ps(input0, z1z1w0w0, _MM_SHUFFLE(2, 0, int(comp1) % 4, int(comp0) % 4));
+		}
+
+		// Mixed components
+		if (rtm_impl::static_condition<rtm_impl::is_mix_xyzw(comp0) && rtm_impl::is_mix_abcd(comp1) && rtm_impl::is_mix_xyzw(comp2) && rtm_impl::is_mix_xyzw(comp3)>::test())
+		{
+			const __m128 x0x0y1y1 = _mm_shuffle_ps(input0, input1, _MM_SHUFFLE(int(comp1) % 4, int(comp1) % 4, int(comp0) % 4, int(comp0) % 4));
+			return _mm_shuffle_ps(x0x0y1y1, input0, _MM_SHUFFLE(int(comp3) % 4, int(comp2) % 4, 2, 0));
+		}
+
+		// Mixed components
+		if (rtm_impl::static_condition<rtm_impl::is_mix_abcd(comp0) && rtm_impl::is_mix_xyzw(comp1) && rtm_impl::is_mix_xyzw(comp2) && rtm_impl::is_mix_xyzw(comp3)>::test())
+		{
+			const __m128 x1x1y0y0 = _mm_shuffle_ps(input1, input0, _MM_SHUFFLE(int(comp1) % 4, int(comp1) % 4, int(comp0) % 4, int(comp0) % 4));
+			return _mm_shuffle_ps(x1x1y0y0, input0, _MM_SHUFFLE(int(comp3) % 4, int(comp2) % 4, 2, 0));
+		}
+
+		// Mixed components
+		if (rtm_impl::static_condition<rtm_impl::is_mix_abcd(comp0) && rtm_impl::is_mix_abcd(comp1) && rtm_impl::is_mix_abcd(comp2) && rtm_impl::is_mix_xyzw(comp3)>::test())
+		{
+			const __m128 z1z1w0w0 = _mm_shuffle_ps(input1, input0, _MM_SHUFFLE(int(comp3) % 4, int(comp3) % 4, int(comp2) % 4, int(comp2) % 4));
+			return _mm_shuffle_ps(input1, z1z1w0w0, _MM_SHUFFLE(2, 0, int(comp1) % 4, int(comp0) % 4));
+		}
+
+		// Mixed components
+		if (rtm_impl::static_condition<rtm_impl::is_mix_abcd(comp0) && rtm_impl::is_mix_abcd(comp1) && rtm_impl::is_mix_xyzw(comp2) && rtm_impl::is_mix_abcd(comp3)>::test())
+		{
+			const __m128 z0z0w1w1 = _mm_shuffle_ps(input0, input1, _MM_SHUFFLE(int(comp3) % 4, int(comp3) % 4, int(comp2) % 4, int(comp2) % 4));
+			return _mm_shuffle_ps(input1, z0z0w1w1, _MM_SHUFFLE(2, 0, int(comp1) % 4, int(comp0) % 4));
+		}
+
+		// Mixed components
+		if (rtm_impl::static_condition<rtm_impl::is_mix_abcd(comp0) && rtm_impl::is_mix_xyzw(comp1) && rtm_impl::is_mix_abcd(comp2) && rtm_impl::is_mix_abcd(comp3)>::test())
+		{
+			const __m128 x1x1y0y0 = _mm_shuffle_ps(input1, input0, _MM_SHUFFLE(int(comp1) % 4, int(comp1) % 4, int(comp0) % 4, int(comp0) % 4));
+			return _mm_shuffle_ps(x1x1y0y0, input1, _MM_SHUFFLE(int(comp3) % 4, int(comp2) % 4, 2, 0));
+		}
+
+		// Mixed components
+		if (rtm_impl::static_condition<rtm_impl::is_mix_xyzw(comp0) && rtm_impl::is_mix_abcd(comp1) && rtm_impl::is_mix_abcd(comp2) && rtm_impl::is_mix_abcd(comp3)>::test())
+		{
+			const __m128 x0x0y1y1 = _mm_shuffle_ps(input0, input1, _MM_SHUFFLE(int(comp1) % 4, int(comp1) % 4, int(comp0) % 4, int(comp0) % 4));
+			return _mm_shuffle_ps(x0x0y1y1, input1, _MM_SHUFFLE(int(comp3) % 4, int(comp2) % 4, 2, 0));
+		}
+
+		// Mixed components
+		if (rtm_impl::static_condition<rtm_impl::is_mix_xyzw(comp0) && rtm_impl::is_mix_abcd(comp1) && rtm_impl::is_mix_xyzw(comp2) && rtm_impl::is_mix_abcd(comp3)>::test())
+		{
+			const __m128 x0x0y1y1 = _mm_shuffle_ps(input0, input1, _MM_SHUFFLE(int(comp1) % 4, int(comp1) % 4, int(comp0) % 4, int(comp0) % 4));
+			const __m128 z0z0w1w1 = _mm_shuffle_ps(input0, input1, _MM_SHUFFLE(int(comp3) % 4, int(comp3) % 4, int(comp2) % 4, int(comp2) % 4));
+			return _mm_shuffle_ps(x0x0y1y1, z0z0w1w1, _MM_SHUFFLE(2, 0, 2, 0));
+		}
+
+		// Mixed components
+		if (rtm_impl::static_condition<rtm_impl::is_mix_abcd(comp0) && rtm_impl::is_mix_xyzw(comp1) && rtm_impl::is_mix_abcd(comp2) && rtm_impl::is_mix_xyzw(comp3)>::test())
+		{
+			const __m128 x1x1y0y0 = _mm_shuffle_ps(input1, input0, _MM_SHUFFLE(int(comp1) % 4, int(comp1) % 4, int(comp0) % 4, int(comp0) % 4));
+			const __m128 z1z1w0w0 = _mm_shuffle_ps(input1, input0, _MM_SHUFFLE(int(comp3) % 4, int(comp3) % 4, int(comp2) % 4, int(comp2) % 4));
+			return _mm_shuffle_ps(x1x1y0y0, z1z1w0w0, _MM_SHUFFLE(2, 0, 2, 0));
+		}
+
+		// Mixed components
+		if (rtm_impl::static_condition<rtm_impl::is_mix_xyzw(comp0) && rtm_impl::is_mix_abcd(comp1) && rtm_impl::is_mix_abcd(comp2) && rtm_impl::is_mix_xyzw(comp3)>::test())
+		{
+			const __m128 x0x0y1y1 = _mm_shuffle_ps(input0, input1, _MM_SHUFFLE(int(comp1) % 4, int(comp1) % 4, int(comp0) % 4, int(comp0) % 4));
+			const __m128 z1z1w0w0 = _mm_shuffle_ps(input1, input0, _MM_SHUFFLE(int(comp3) % 4, int(comp3) % 4, int(comp2) % 4, int(comp2) % 4));
+			return _mm_shuffle_ps(x0x0y1y1, z1z1w0w0, _MM_SHUFFLE(2, 0, 2, 0));
+		}
+
+		// Mixed components
+		if (rtm_impl::static_condition<rtm_impl::is_mix_abcd(comp0) && rtm_impl::is_mix_xyzw(comp1) && rtm_impl::is_mix_xyzw(comp2) && rtm_impl::is_mix_abcd(comp3)>::test())
+		{
+			const __m128 x1x1y0y0 = _mm_shuffle_ps(input1, input0, _MM_SHUFFLE(int(comp1) % 4, int(comp1) % 4, int(comp0) % 4, int(comp0) % 4));
+			const __m128 z0z0w1w1 = _mm_shuffle_ps(input0, input1, _MM_SHUFFLE(int(comp3) % 4, int(comp3) % 4, int(comp2) % 4, int(comp2) % 4));
+			return _mm_shuffle_ps(x1x1y0y0, z0z0w1w1, _MM_SHUFFLE(2, 0, 2, 0));
+		}
+
+		// All vector_mix permutations are handled above, return a dummy value to avoid warnings
+		return _mm_setzero_ps();
+#elif defined(RTM_WASM128_INTRINSICS)
+		// The mix4 values match the lane indices of the shuffle: [xyzw] are 0 to 3 and [abcd] are 4 to 7
+		return wasm_i32x4_shuffle(input0, input1, int(comp0), int(comp1), int(comp2), int(comp3));
+#elif defined(RTM_NEON_INTRINSICS)
+		// All comes from the same position
+		// GCC uses a table lookup (vtbl) for this case of __builtin_shufflevector on ARMv7, test it first
+		if (rtm_impl::static_condition<comp0 == comp1 && comp0 == comp2 && comp0 == comp3>::test())
+		{
+			const float32x4_t input = rtm_impl::is_mix_xyzw(comp0) ? input0 : input1;
+
+	#if defined(RTM_NEON64_INTRINSICS)
+			return vdupq_laneq_f32(input, int(comp0) % 4);
+	#else
+			// ARMv7 can only replicate a lane of a 64 bit register
+			const float32x2_t input_half = (int(comp0) % 4) < 2 ? vget_low_f32(input) : vget_high_f32(input);
+			return vdupq_lane_f32(input_half, int(comp0) % 2);
+	#endif
+		}
+
+	#if defined(RTM_COMPILER_CLANG) || defined(RTM_COMPILER_GCC)
+		#if RTM_HAS_BUILTIN(__builtin_shufflevector)
+			// GCC/Clang offer a builtin intrinsic for the other permutations
+			// Clang generates short instruction sequences, GCC uses a table lookup (vtbl/tbl) for most of them
+			return __builtin_shufflevector(input0, input1, int(comp0), int(comp1), int(comp2), int(comp3));
+		#endif
+	#endif
+
+	#if defined(RTM_NEON64_INTRINSICS)
+		// Duplicate low words of input 0
+		if (rtm_impl::static_condition<comp0 == mix4::x && comp1 == mix4::x && comp2 == mix4::y && comp3 == mix4::y>::test())
+			return vzip1q_f32(input0, input0);
+
+		// Duplicate low words of input 1
+		if (rtm_impl::static_condition<comp0 == mix4::a && comp1 == mix4::a && comp2 == mix4::b && comp3 == mix4::b>::test())
+			return vzip1q_f32(input1, input1);
+
 		// Low words from both inputs are interleaved
 		if (rtm_impl::static_condition<comp0 == mix4::x && comp1 == mix4::a && comp2 == mix4::y && comp3 == mix4::b>::test())
-			return _mm_unpacklo_ps(input0, input1);
+			return vzip1q_f32(input0, input1);
 
 		// Low words from both inputs are interleaved
 		if (rtm_impl::static_condition<comp0 == mix4::a && comp1 == mix4::x && comp2 == mix4::b && comp3 == mix4::y>::test())
-			return _mm_unpacklo_ps(input1, input0);
+			return vzip1q_f32(input1, input0);
+
+		// Duplicate high words of input 0
+		if (rtm_impl::static_condition<comp0 == mix4::z && comp1 == mix4::z && comp2 == mix4::w && comp3 == mix4::w>::test())
+			return vzip2q_f32(input0, input0);
+
+		// Duplicate high words of input 1
+		if (rtm_impl::static_condition<comp0 == mix4::c && comp1 == mix4::c && comp2 == mix4::d && comp3 == mix4::d>::test())
+			return vzip2q_f32(input1, input1);
 
 		// High words from both inputs are interleaved
 		if (rtm_impl::static_condition<comp0 == mix4::z && comp1 == mix4::c && comp2 == mix4::w && comp3 == mix4::d>::test())
-			return _mm_unpackhi_ps(input0, input1);
+			return vzip2q_f32(input0, input1);
 
 		// High words from both inputs are interleaved
 		if (rtm_impl::static_condition<comp0 == mix4::c && comp1 == mix4::z && comp2 == mix4::d && comp3 == mix4::w>::test())
-			return _mm_unpackhi_ps(input1, input0);
-#endif	// defined(RTM_SSE2_INTRINSICS)
+			return vzip2q_f32(input1, input0);
 
-#if defined(RTM_NEON64_INTRINSICS)
-        // Low words from both inputs are interleaved
-        if (rtm_impl::static_condition<comp0 == mix4::x && comp1 == mix4::a && comp2 == mix4::y && comp3 == mix4::b>::test())
-            return vzip1q_f32(input0, input1);
+		// Even-numbered vector elements, interleaved
+		if (rtm_impl::static_condition<comp0 == mix4::x && comp1 == mix4::z && comp2 == mix4::x && comp3 == mix4::z>::test())
+			return vuzp1q_f32(input0, input0);
 
-        // Low words from both inputs are interleaved
-        if (rtm_impl::static_condition<comp0 == mix4::a && comp1 == mix4::x && comp2 == mix4::b && comp3 == mix4::y>::test())
-            return vzip1q_f32(input1, input0);
+		// Even-numbered vector elements, interleaved
+		if (rtm_impl::static_condition<comp0 == mix4::a && comp1 == mix4::c && comp2 == mix4::a && comp3 == mix4::c>::test())
+			return vuzp1q_f32(input1, input1);
 
-        // High words from both inputs are interleaved
-        if (rtm_impl::static_condition<comp0 == mix4::z && comp1 == mix4::c && comp2 == mix4::w && comp3 == mix4::d>::test())
-            return vzip2q_f32(input0, input1);
+		// Even-numbered vector elements, consecutively
+		if (rtm_impl::static_condition<comp0 == mix4::x && comp1 == mix4::z && comp2 == mix4::a && comp3 == mix4::c>::test())
+			return vuzp1q_f32(input0, input1);
 
-        // High words from both inputs are interleaved
-        if (rtm_impl::static_condition<comp0 == mix4::c && comp1 == mix4::z && comp2 == mix4::d && comp3 == mix4::w>::test())
-            return vzip2q_f32(input1, input0);
+		// Even-numbered vector elements, consecutively
+		if (rtm_impl::static_condition<comp0 == mix4::a && comp1 == mix4::c && comp2 == mix4::x && comp3 == mix4::z>::test())
+			return vuzp1q_f32(input1, input0);
 
-        // Even-numbered vector elements, consecutively
-        if (rtm_impl::static_condition<comp0 == mix4::x && comp1 == mix4::z && comp2 == mix4::a && comp3 == mix4::c>::test())
-            return vuzp1q_f32(input0, input1);
+		// Odd-numbered vector elements, interleaved
+		if (rtm_impl::static_condition<comp0 == mix4::y && comp1 == mix4::w && comp2 == mix4::y && comp3 == mix4::w>::test())
+			return vuzp2q_f32(input0, input0);
 
-        // Even-numbered vector elements, consecutively
-        if (rtm_impl::static_condition<comp0 == mix4::a && comp1 == mix4::c && comp2 == mix4::x && comp3 == mix4::z>::test())
-            return vuzp1q_f32(input1, input0);
+		// Odd-numbered vector elements, interleaved
+		if (rtm_impl::static_condition<comp0 == mix4::b && comp1 == mix4::d && comp2 == mix4::b && comp3 == mix4::d>::test())
+			return vuzp2q_f32(input1, input1);
 
-        // Odd-numbered vector elements, consecutively
-        if (rtm_impl::static_condition<comp0 == mix4::y && comp1 == mix4::w && comp2 == mix4::b && comp3 == mix4::d>::test())
-            return vuzp2q_f32(input0, input1);
+		// Odd-numbered vector elements, consecutively
+		if (rtm_impl::static_condition<comp0 == mix4::y && comp1 == mix4::w && comp2 == mix4::b && comp3 == mix4::d>::test())
+			return vuzp2q_f32(input0, input1);
 
-        // Odd-numbered vector elements, consecutively
-        if (rtm_impl::static_condition<comp0 == mix4::b && comp1 == mix4::d && comp2 == mix4::y && comp3 == mix4::w>::test())
-            return vuzp2q_f32(input1, input0);
+		// Odd-numbered vector elements, consecutively
+		if (rtm_impl::static_condition<comp0 == mix4::b && comp1 == mix4::d && comp2 == mix4::y && comp3 == mix4::w>::test())
+			return vuzp2q_f32(input1, input0);
 
-        // Even-numbered vector elements, interleaved
-        if (rtm_impl::static_condition<comp0 == mix4::x && comp1 == mix4::a && comp2 == mix4::z && comp3 == mix4::c>::test())
-            return vtrn1q_f32(input0, input1);
+		// Duplicate even-numbered vector elements, consecutively
+		if (rtm_impl::static_condition<comp0 == mix4::x && comp1 == mix4::x && comp2 == mix4::z && comp3 == mix4::z>::test())
+			return vtrn1q_f32(input0, input0);
 
-        // Even-numbered vector elements, interleaved
-        if (rtm_impl::static_condition<comp0 == mix4::a && comp1 == mix4::x && comp2 == mix4::c && comp3 == mix4::z>::test())
-            return vtrn1q_f32(input1, input0);
+		// Duplicate even-numbered vector elements, consecutively
+		if (rtm_impl::static_condition<comp0 == mix4::a && comp1 == mix4::a && comp2 == mix4::c && comp3 == mix4::c>::test())
+			return vtrn1q_f32(input1, input1);
 
-        // Odd-numbered vector elements, interleaved
-        if (rtm_impl::static_condition<comp0 == mix4::y && comp1 == mix4::b && comp2 == mix4::w && comp3 == mix4::d>::test())
-            return vtrn2q_f32(input0, input1);
+		// Even-numbered vector elements, interleaved
+		if (rtm_impl::static_condition<comp0 == mix4::x && comp1 == mix4::a && comp2 == mix4::z && comp3 == mix4::c>::test())
+			return vtrn1q_f32(input0, input1);
 
-        // Odd-numbered vector elements, interleaved
-        if (rtm_impl::static_condition<comp0 == mix4::b && comp1 == mix4::y && comp2 == mix4::d && comp3 == mix4::w>::test())
-            return vtrn2q_f32(input1, input0);
-#endif // defined(RTM_NEON64_INTRINSICS)
+		// Even-numbered vector elements, interleaved
+		if (rtm_impl::static_condition<comp0 == mix4::a && comp1 == mix4::x && comp2 == mix4::c && comp3 == mix4::z>::test())
+			return vtrn1q_f32(input1, input0);
 
-#if defined(RTM_NEON_INTRINSICS)
-        // The highest vector elements from input 0 and the lowest vector elements from input 1, consecutively
-        if (rtm_impl::static_condition<rtm_impl::is_mix_xyzw(comp0) &&
-                                       int(comp0) + 1 == int(comp1) &&
-                                       int(comp1) + 1 == int(comp2) &&
-                                       int(comp2) + 1 == int(comp3)>::test())
-            return vextq_f32(input0, input1, int(comp0) % 4);
+		// Duplicate odd-numbered vector elements, consecutively
+		if (rtm_impl::static_condition<comp0 == mix4::y && comp1 == mix4::y && comp2 == mix4::w && comp3 == mix4::w>::test())
+			return vtrn2q_f32(input0, input0);
 
-        // The highest vector elements from input 1 and the lowest vector elements from input 0, consecutively
-        if (rtm_impl::static_condition<rtm_impl::is_mix_abcd(comp0) &&
-                                       (int(comp0) + 1) % 8 == int(comp1) &&
-                                       (int(comp1) + 1) % 8 == int(comp2) &&
-                                       (int(comp2) + 1) % 8 == int(comp3)>::test())
-            return vextq_f32(input1, input0, int(comp0) % 4);
+		// Duplicate odd-numbered vector elements, consecutively
+		if (rtm_impl::static_condition<comp0 == mix4::b && comp1 == mix4::b && comp2 == mix4::d && comp3 == mix4::d>::test())
+			return vtrn2q_f32(input1, input1);
 
-        // All four components come from input 0, reversed order in each doubleword
-        if (rtm_impl::static_condition<comp0 == mix4::y && comp1 == mix4::x && comp2 == mix4::w && comp3 == mix4::z>::test())
-            return vrev64q_f32(input0);
+		// Odd-numbered vector elements, interleaved
+		if (rtm_impl::static_condition<comp0 == mix4::y && comp1 == mix4::b && comp2 == mix4::w && comp3 == mix4::d>::test())
+			return vtrn2q_f32(input0, input1);
 
-        // All four components come from input 1, reversed order in each doubleword
-        if (rtm_impl::static_condition<comp0 == mix4::b && comp1 == mix4::a && comp2 == mix4::d && comp3 == mix4::c>::test())
-            return vrev64q_f32(input1);
+		// Odd-numbered vector elements, interleaved
+		if (rtm_impl::static_condition<comp0 == mix4::b && comp1 == mix4::y && comp2 == mix4::d && comp3 == mix4::w>::test())
+			return vtrn2q_f32(input1, input0);
+	#endif // defined(RTM_NEON64_INTRINSICS)
 
-        // First component comes from input 1, others come from the respective positions of input 0
-        if (rtm_impl::static_condition<rtm_impl::is_mix_abcd(comp0) && comp1 == mix4::y && comp2 == mix4::z && comp3 == mix4::w>::test())
-            return vsetq_lane_f32(vgetq_lane_f32(input1, int(comp0) % 4), input0, 0);
+		// The highest vector elements from input 0 and the lowest vector elements from input 1, consecutively
+		if (rtm_impl::static_condition<rtm_impl::is_mix_xyzw(comp0) &&
+									int(comp0) + 1 == int(comp1) &&
+									int(comp1) + 1 == int(comp2) &&
+									int(comp2) + 1 == int(comp3)>::test())
+			return vextq_f32(input0, input1, int(comp0) % 4);
 
-        // Second component comes from input 1, others come from the respective positions of input 0
-        if (rtm_impl::static_condition<comp0 == mix4::x && rtm_impl::is_mix_abcd(comp1) && comp2 == mix4::z && comp3 == mix4::w>::test())
-            return vsetq_lane_f32(vgetq_lane_f32(input1, int(comp1) % 4), input0, 1);
+		// The highest vector elements from input 1 and the lowest vector elements from input 0, consecutively
+		if (rtm_impl::static_condition<rtm_impl::is_mix_abcd(comp0) &&
+									(int(comp0) + 1) % 8 == int(comp1) &&
+									(int(comp1) + 1) % 8 == int(comp2) &&
+									(int(comp2) + 1) % 8 == int(comp3)>::test())
+			return vextq_f32(input1, input0, int(comp0) % 4);
 
-        // Third component comes from input 1, others come from the respective positions of input 0
-        if (rtm_impl::static_condition<comp0 == mix4::x && comp1 == mix4::y && rtm_impl::is_mix_abcd(comp2) && comp3 == mix4::w>::test())
-            return vsetq_lane_f32(vgetq_lane_f32(input1, int(comp2) % 4), input0, 2);
+		// All four components come from input 0, reversed order in each doubleword
+		if (rtm_impl::static_condition<comp0 == mix4::y && comp1 == mix4::x && comp2 == mix4::w && comp3 == mix4::z>::test())
+			return vrev64q_f32(input0);
 
-        // Fourth component comes from input 1, others come from the respective positions of input 0
-        if (rtm_impl::static_condition<comp0 == mix4::x && comp1 == mix4::y && comp2 == mix4::z && rtm_impl::is_mix_abcd(comp3)>::test())
-            return vsetq_lane_f32(vgetq_lane_f32(input1, int(comp3) % 4), input0, 3);
+		// All four components come from input 1, reversed order in each doubleword
+		if (rtm_impl::static_condition<comp0 == mix4::b && comp1 == mix4::a && comp2 == mix4::d && comp3 == mix4::c>::test())
+			return vrev64q_f32(input1);
 
-        // First component comes from input 0, others come from the respective positions of input 1
-        if (rtm_impl::static_condition<rtm_impl::is_mix_xyzw(comp0) && comp1 == mix4::b && comp2 == mix4::c && comp3 == mix4::d>::test())
-            return vsetq_lane_f32(vgetq_lane_f32(input0, int(comp0) % 4), input1, 0);
+		// First component comes from input 1, others come from the respective positions of input 0
+		if (rtm_impl::static_condition<rtm_impl::is_mix_abcd(comp0) && comp1 == mix4::y && comp2 == mix4::z && comp3 == mix4::w>::test())
+			return vsetq_lane_f32(vgetq_lane_f32(input1, int(comp0) % 4), input0, 0);
 
-        // Second component comes from input 0, others come from the respective positions of input 1
-        if (rtm_impl::static_condition<comp0 == mix4::a && rtm_impl::is_mix_xyzw(comp1) && comp2 == mix4::c && comp3 == mix4::d>::test())
-            return vsetq_lane_f32(vgetq_lane_f32(input0, int(comp1) % 4), input1, 1);
+		// Second component comes from input 1, others come from the respective positions of input 0
+		if (rtm_impl::static_condition<comp0 == mix4::x && rtm_impl::is_mix_abcd(comp1) && comp2 == mix4::z && comp3 == mix4::w>::test())
+			return vsetq_lane_f32(vgetq_lane_f32(input1, int(comp1) % 4), input0, 1);
 
-        // Third component comes from input 0, others come from the respective positions of input 1
-        if (rtm_impl::static_condition<comp0 == mix4::a && comp1 == mix4::b && rtm_impl::is_mix_xyzw(comp2) && comp3 == mix4::d>::test())
-            return vsetq_lane_f32(vgetq_lane_f32(input0, int(comp2) % 4), input1, 2);
+		// Third component comes from input 1, others come from the respective positions of input 0
+		if (rtm_impl::static_condition<comp0 == mix4::x && comp1 == mix4::y && rtm_impl::is_mix_abcd(comp2) && comp3 == mix4::w>::test())
+			return vsetq_lane_f32(vgetq_lane_f32(input1, int(comp2) % 4), input0, 2);
 
-        // Fourth component comes from input 0, others come from the respective positions of input 1
-        if (rtm_impl::static_condition<comp0 == mix4::a && comp1 == mix4::b && comp2 == mix4::c && rtm_impl::is_mix_xyzw(comp3)>::test())
-            return vsetq_lane_f32(vgetq_lane_f32(input0, int(comp3) % 4), input1, 3);
+		// Fourth component comes from input 1, others come from the respective positions of input 0
+		if (rtm_impl::static_condition<comp0 == mix4::x && comp1 == mix4::y && comp2 == mix4::z && rtm_impl::is_mix_abcd(comp3)>::test())
+			return vsetq_lane_f32(vgetq_lane_f32(input1, int(comp3) % 4), input0, 3);
 
+		// First component comes from input 0, others come from the respective positions of input 1
+		if (rtm_impl::static_condition<rtm_impl::is_mix_xyzw(comp0) && comp1 == mix4::b && comp2 == mix4::c && comp3 == mix4::d>::test())
+			return vsetq_lane_f32(vgetq_lane_f32(input0, int(comp0) % 4), input1, 0);
 
-        // All comes from the same position
-        if (rtm_impl::static_condition<comp0 == comp1 && comp0 == comp2 && comp0 == comp3>::test()) {
-            // All comes from the same position of input0
-            if (rtm_impl::static_condition<rtm_impl::is_mix_xyzw(comp0)>::test())
-                return vmovq_n_f32(vgetq_lane_f32(input0, int(comp0) % 4));
-            // All comes from the same position of input1
-            if (rtm_impl::static_condition<rtm_impl::is_mix_abcd(comp0)>::test())
-                return vmovq_n_f32(vgetq_lane_f32(input1, int(comp0) % 4));
-        }
-#endif // defined(RTM_NEON_INTRINSICS)
+		// Second component comes from input 0, others come from the respective positions of input 1
+		if (rtm_impl::static_condition<comp0 == mix4::a && rtm_impl::is_mix_xyzw(comp1) && comp2 == mix4::c && comp3 == mix4::d>::test())
+			return vsetq_lane_f32(vgetq_lane_f32(input0, int(comp1) % 4), input1, 1);
 
-        // Slow code path, not yet optimized or not using intrinsics
-		const float x = rtm_impl::is_mix_xyzw(comp0) ? vector_get_component<comp0>(input0) : vector_get_component<comp0>(input1);
-		const float y = rtm_impl::is_mix_xyzw(comp1) ? vector_get_component<comp1>(input0) : vector_get_component<comp1>(input1);
-		const float z = rtm_impl::is_mix_xyzw(comp2) ? vector_get_component<comp2>(input0) : vector_get_component<comp2>(input1);
-		const float w = rtm_impl::is_mix_xyzw(comp3) ? vector_get_component<comp3>(input0) : vector_get_component<comp3>(input1);
+		// Third component comes from input 0, others come from the respective positions of input 1
+		if (rtm_impl::static_condition<comp0 == mix4::a && comp1 == mix4::b && rtm_impl::is_mix_xyzw(comp2) && comp3 == mix4::d>::test())
+			return vsetq_lane_f32(vgetq_lane_f32(input0, int(comp2) % 4), input1, 2);
+
+		// Fourth component comes from input 0, others come from the respective positions of input 1
+		if (rtm_impl::static_condition<comp0 == mix4::a && comp1 == mix4::b && comp2 == mix4::c && rtm_impl::is_mix_xyzw(comp3)>::test())
+			return vsetq_lane_f32(vgetq_lane_f32(input0, int(comp3) % 4), input1, 3);
+
+		// Fallback to handle remaining cases
+		const float x = vgetq_lane_f32(rtm_impl::is_mix_xyzw(comp0) ? input0 : input1, int(comp0) % 4);
+		const float y = vgetq_lane_f32(rtm_impl::is_mix_xyzw(comp1) ? input0 : input1, int(comp1) % 4);
+		const float z = vgetq_lane_f32(rtm_impl::is_mix_xyzw(comp2) ? input0 : input1, int(comp2) % 4);
+		const float w = vgetq_lane_f32(rtm_impl::is_mix_xyzw(comp3) ? input0 : input1, int(comp3) % 4);
+		const float32x2_t xy = vset_lane_f32(y, vmov_n_f32(x), 1);
+		const float32x2_t zw = vset_lane_f32(w, vmov_n_f32(z), 1);
+		return vcombine_f32(xy, zw);
+#else
+		// Non-simd variant
+		constexpr component4 component0 = rtm_impl::mix_to_component(comp0);
+		constexpr component4 component1 = rtm_impl::mix_to_component(comp1);
+		constexpr component4 component2 = rtm_impl::mix_to_component(comp2);
+		constexpr component4 component3 = rtm_impl::mix_to_component(comp3);
+
+		const float x0 = vector_get_component(input0, component0);
+		const float x1 = vector_get_component(input1, component0);
+		const float x = rtm_impl::is_mix_xyzw(comp0) ? x0 : x1;
+
+		const float y0 = vector_get_component(input0, component1);
+		const float y1 = vector_get_component(input1, component1);
+		const float y = rtm_impl::is_mix_xyzw(comp1) ? y0 : y1;
+
+		const float z0 = vector_get_component(input0, component2);
+		const float z1 = vector_get_component(input1, component2);
+		const float z = rtm_impl::is_mix_xyzw(comp2) ? z0 : z1;
+
+		const float w0 = vector_get_component(input0, component3);
+		const float w1 = vector_get_component(input1, component3);
+		const float w = rtm_impl::is_mix_xyzw(comp3) ? w0 : w1;
+
 		return vector_set(x, y, z, w);
+#endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Replicates the [x] component in all components.
-	//////////////////////////////////////////////////////////////////////////
-	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_dup_x(vector4f_arg0 input) RTM_NO_EXCEPT { return vector_mix<mix4::x, mix4::x, mix4::x, mix4::x>(input, input); }
+	/// Replicates the [x] component in all components.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_dup_x(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+#if defined(RTM_SSE2_INTRINSICS)
+		return _mm_shuffle_ps(input, input, _MM_SHUFFLE(0, 0, 0, 0));
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_i32x4_shuffle(input, input, 0, 0, 0, 0);
+#elif defined(RTM_NEON64_INTRINSICS)
+		return vdupq_laneq_f32(input, 0);
+#elif defined(RTM_NEON_INTRINSICS)
+		return vdupq_lane_f32(vget_low_f32(input), 0);
+#else
+		return vector4f{ input.x, input.x, input.x, input.x };
+#endif
+	}
+
+	/// Replicates the [y] component in all components.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_dup_y(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+#if defined(RTM_SSE2_INTRINSICS)
+		return _mm_shuffle_ps(input, input, _MM_SHUFFLE(1, 1, 1, 1));
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_i32x4_shuffle(input, input, 1, 1, 1, 1);
+#elif defined(RTM_NEON64_INTRINSICS)
+		return vdupq_laneq_f32(input, 1);
+#elif defined(RTM_NEON_INTRINSICS)
+		return vdupq_lane_f32(vget_low_f32(input), 1);
+#else
+		return vector4f{ input.y, input.y, input.y, input.y };
+#endif
+	}
+
+	/// Replicates the [z] component in all components.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_dup_z(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+#if defined(RTM_SSE2_INTRINSICS)
+		return _mm_shuffle_ps(input, input, _MM_SHUFFLE(2, 2, 2, 2));
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_i32x4_shuffle(input, input, 2, 2, 2, 2);
+#elif defined(RTM_NEON64_INTRINSICS)
+		return vdupq_laneq_f32(input, 2);
+#elif defined(RTM_NEON_INTRINSICS)
+		return vdupq_lane_f32(vget_high_f32(input), 0);
+#else
+		return vector4f{ input.z, input.z, input.z, input.z };
+#endif
+	}
+
+	/// Replicates the [w] component in all components.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_dup_w(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+#if defined(RTM_SSE2_INTRINSICS)
+		return _mm_shuffle_ps(input, input, _MM_SHUFFLE(3, 3, 3, 3));
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_i32x4_shuffle(input, input, 3, 3, 3, 3);
+#elif defined(RTM_NEON64_INTRINSICS)
+		return vdupq_laneq_f32(input, 3);
+#elif defined(RTM_NEON_INTRINSICS)
+		return vdupq_lane_f32(vget_high_f32(input), 1);
+#else
+		return vector4f{ input.w, input.w, input.w, input.w };
+#endif
+	}
+
+	/// \}
 
 	//////////////////////////////////////////////////////////////////////////
-	// Replicates the [y] component in all components.
-	//////////////////////////////////////////////////////////////////////////
-	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_dup_y(vector4f_arg0 input) RTM_NO_EXCEPT { return vector_mix<mix4::y, mix4::y, mix4::y, mix4::y>(input, input); }
-
-	//////////////////////////////////////////////////////////////////////////
-	// Replicates the [z] component in all components.
-	//////////////////////////////////////////////////////////////////////////
-	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_dup_z(vector4f_arg0 input) RTM_NO_EXCEPT { return vector_mix<mix4::z, mix4::z, mix4::z, mix4::z>(input, input); }
-
-	//////////////////////////////////////////////////////////////////////////
-	// Replicates the [w] component in all components.
-	//////////////////////////////////////////////////////////////////////////
-	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_dup_w(vector4f_arg0 input) RTM_NO_EXCEPT { return vector_mix<mix4::w, mix4::w, mix4::w, mix4::w>(input, input); }
-
-	//////////////////////////////////////////////////////////////////////////
-	// Logical
+	/// \name Logical
+	/// \{
 	//////////////////////////////////////////////////////////////////////////
 
-	//////////////////////////////////////////////////////////////////////////
-	// Per component logical AND between the inputs: input0 & input1
-	//////////////////////////////////////////////////////////////////////////
+	/// Per component logical AND between the inputs: input0 & input1
 	inline vector4f RTM_SIMD_CALL vector_and(vector4f_arg0 input0, vector4f_arg1 input1) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		return _mm_and_ps(input0, input1);
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_v128_and(input0, input1);
 #elif defined(RTM_NEON_INTRINSICS)
 		return vreinterpretq_f32_u32(vandq_u32(vreinterpretq_u32_f32(input0), vreinterpretq_u32_f32(input1)));
 #else
@@ -2651,11 +3967,11 @@ namespace rtm
 	#pragma GCC diagnostic ignored "-Wuninitialized"
 #endif
 
-		const uint32_t* input0_ = reinterpret_cast<const uint32_t*>(&input0);
-		const uint32_t* input1_ = reinterpret_cast<const uint32_t*>(&input1);
+		const uint32_t* input0_ = rtm_impl::bit_cast<const uint32_t*>(&input0);
+		const uint32_t* input1_ = rtm_impl::bit_cast<const uint32_t*>(&input1);
 
 		vector4f result;
-		uint32_t* result_ = reinterpret_cast<uint32_t*>(&result);
+		uint32_t* result_ = rtm_impl::bit_cast<uint32_t*>(&result);
 
 		result_[0] = input0_[0] & input1_[0];
 		result_[1] = input0_[1] & input1_[1];
@@ -2670,13 +3986,13 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Per component logical OR between the inputs: input0 | input1
-	//////////////////////////////////////////////////////////////////////////
+	/// Per component logical OR between the inputs: input0 | input1
 	inline vector4f RTM_SIMD_CALL vector_or(vector4f_arg0 input0, vector4f_arg1 input1) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		return _mm_or_ps(input0, input1);
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_v128_or(input0, input1);
 #elif defined(RTM_NEON_INTRINSICS)
 		return vreinterpretq_f32_u32(vorrq_u32(vreinterpretq_u32_f32(input0), vreinterpretq_u32_f32(input1)));
 #else
@@ -2687,11 +4003,11 @@ namespace rtm
 	#pragma GCC diagnostic ignored "-Wuninitialized"
 #endif
 
-		const uint32_t* input0_ = reinterpret_cast<const uint32_t*>(&input0);
-		const uint32_t* input1_ = reinterpret_cast<const uint32_t*>(&input1);
+		const uint32_t* input0_ = rtm_impl::bit_cast<const uint32_t*>(&input0);
+		const uint32_t* input1_ = rtm_impl::bit_cast<const uint32_t*>(&input1);
 
 		vector4f result;
-		uint32_t* result_ = reinterpret_cast<uint32_t*>(&result);
+		uint32_t* result_ = rtm_impl::bit_cast<uint32_t*>(&result);
 
 		result_[0] = input0_[0] | input1_[0];
 		result_[1] = input0_[1] | input1_[1];
@@ -2706,13 +4022,13 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Per component logical XOR between the inputs: input0 ^ input1
-	//////////////////////////////////////////////////////////////////////////
+	/// Per component logical XOR between the inputs: input0 ^ input1
 	inline vector4f RTM_SIMD_CALL vector_xor(vector4f_arg0 input0, vector4f_arg1 input1) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
 		return _mm_xor_ps(input0, input1);
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_v128_xor(input0, input1);
 #elif defined(RTM_NEON_INTRINSICS)
 		return vreinterpretq_f32_u32(veorq_u32(vreinterpretq_u32_f32(input0), vreinterpretq_u32_f32(input1)));
 #else
@@ -2723,11 +4039,11 @@ namespace rtm
 	#pragma GCC diagnostic ignored "-Wuninitialized"
 #endif
 
-		const uint32_t* input0_ = reinterpret_cast<const uint32_t*>(&input0);
-		const uint32_t* input1_ = reinterpret_cast<const uint32_t*>(&input1);
+		const uint32_t* input0_ = rtm_impl::bit_cast<const uint32_t*>(&input0);
+		const uint32_t* input1_ = rtm_impl::bit_cast<const uint32_t*>(&input1);
 
 		vector4f result;
-		uint32_t* result_ = reinterpret_cast<uint32_t*>(&result);
+		uint32_t* result_ = rtm_impl::bit_cast<uint32_t*>(&result);
 
 		result_[0] = input0_[0] ^ input1_[0];
 		result_[1] = input0_[1] ^ input1_[1];
@@ -2742,31 +4058,33 @@ namespace rtm
 #endif
 	}
 
-
-	//////////////////////////////////////////////////////////////////////////
-	// Miscellaneous
-	//////////////////////////////////////////////////////////////////////////
+	/// \}
 
 
 	//////////////////////////////////////////////////////////////////////////
-	// Returns per component the sign of the input vector: input >= 0.0 ? 1.0 : -1.0
+	/// \name Miscellaneous
+	/// \{
 	//////////////////////////////////////////////////////////////////////////
+
+
+	/// Returns per component the sign of the input vector: input >= 0.0 ? 1.0 : -1.0
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_sign(vector4f_arg0 input) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
-		constexpr __m128 signs = { -0.0F, -0.0F, -0.0F, -0.0F };
-		constexpr __m128 one = { 1.0F, 1.0F, 1.0F, 1.0F };
+		constexpr __m128 signs = RTM_VECTOR4F_MAKE(-0.0F, -0.0F, -0.0F, -0.0F);
+		constexpr __m128 one = RTM_VECTOR4F_MAKE(1.0F, 1.0F, 1.0F, 1.0F);
 		const __m128 sign_bits = _mm_and_ps(input, signs);	// Mask out the sign bit
 		return _mm_or_ps(sign_bits, one);					// Copy the sign bit onto +-1.0f
+#elif defined(RTM_WASM128_INTRINSICS)
+		const v128_t sign_bits = wasm_v128_and(input, wasm_f32x4_splat(-0.0F));	// Mask out the sign bit
+		return wasm_v128_or(sign_bits, wasm_f32x4_splat(1.0F));					// Copy the sign bit onto +-1.0f
 #else
 		const mask4f mask = vector_greater_equal(input, vector_zero());
 		return vector_select(mask, vector_set(1.0F), vector_set(-1.0F));
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns per component the input with the sign of the control value.
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns per component the input with the sign of the control value.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_copy_sign(vector4f_arg0 input, vector4f_arg1 control_sign) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
@@ -2774,6 +4092,8 @@ namespace rtm
 		__m128 signs = _mm_and_ps(sign_bit, control_sign);
 		__m128 abs_input = _mm_andnot_ps(sign_bit, input);
 		return _mm_or_ps(abs_input, signs);
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_v128_bitselect(control_sign, input, wasm_f32x4_splat(-0.0F));
 #else
 		float x = vector_get_x(input);
 		float y = vector_get_y(input);
@@ -2789,106 +4109,121 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns per component the rounded input using a symmetric algorithm.
-	// vector_round_symmetric(1.5) = 2.0
-	// vector_round_symmetric(1.2) = 1.0
-	// vector_round_symmetric(-1.5) = -2.0
-	// vector_round_symmetric(-1.2) = -1.0
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns per component the rounded input using a symmetric algorithm.
+	/// vector_round_symmetric(1.5) = 2.0
+	/// vector_round_symmetric(1.2) = 1.0
+	/// vector_round_symmetric(-1.5) = -2.0
+	/// vector_round_symmetric(-1.2) = -1.0
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_round_symmetric(vector4f_arg0 input) RTM_NO_EXCEPT
 	{
-		// NaN, +- Infinity, and numbers larger or equal to 2^23 remain unchanged
-		// since they have no fractional part.
+		// We do not add a bias of 0.5 and then truncate: that addition can round.
+		// For example, 0.49999997 + 0.5 rounds to 1.0, and 8388609.0 + 0.5 rounds to 8388610.0.
+		// We truncate the input and calculate the fractional part instead. Both operations are exact.
+		// If the absolute value of the fractional part is 0.5 or more, we add 1.0 with the sign of the input.
 
 #if defined(RTM_SSE4_INTRINSICS)
-		__m128 is_positive = _mm_cmpge_ps(input, _mm_setzero_ps());
-
 		const __m128 sign_mask = _mm_set_ps(-0.0F, -0.0F, -0.0F, -0.0F);
-		__m128 sign = _mm_andnot_ps(is_positive, sign_mask);
+		__m128 sign = _mm_and_ps(input, sign_mask);
 
-		// For positive values, we add a bias of 0.5.
-		// For negative values, we add a bias of -0.5.
-		__m128 bias = _mm_or_ps(sign, _mm_set_ps1(0.5F));
-		__m128 biased_input = _mm_add_ps(input, bias);
+		// NaN, +- Infinity, and numbers larger or equal to 2^23 remain unchanged
+		// since they have no fractional part.
+		__m128 integer_part = _mm_round_ps(input, _MM_FROUND_TO_ZERO | _MM_FROUND_NO_EXC);
 
-		__m128 floored = _mm_floor_ps(biased_input);
-		__m128 ceiled = _mm_ceil_ps(biased_input);
+		// The fractional part is NaN for NaN and infinities, the comparison is false for them
+		__m128 abs_fraction = _mm_andnot_ps(sign_mask, _mm_sub_ps(input, integer_part));
+		__m128 is_fraction_half_or_more = _mm_cmpge_ps(abs_fraction, _mm_set_ps1(0.5F));
 
-		return vector_select(is_positive, floored, ceiled);
+		// The bias is +- 1.0 with the sign of the input, or 0.0
+		__m128 bias = _mm_and_ps(is_fraction_half_or_more, _mm_or_ps(sign, _mm_set_ps1(1.0F)));
+		__m128 result = _mm_add_ps(integer_part, bias);
+
+		// Keep the sign of the input as std::round does, thus round(-0.0) = -0.0 and round(-0.3) = -0.0
+		return _mm_or_ps(result, sign);
 #elif defined(RTM_SSE2_INTRINSICS)
 		const __m128i abs_mask = _mm_set_epi32(0x7FFFFFFFULL, 0x7FFFFFFFULL, 0x7FFFFFFFULL, 0x7FFFFFFFULL);
 		const __m128 fractional_limit = _mm_set_ps1(8388608.0F); // 2^23
 
-		// Build our mask, larger values that have no fractional part, and infinities will be true
-		// Smaller values and NaN will be false
+		// NaN, +- Infinity, and numbers larger or equal to 2^23 remain unchanged
+		// since they have no fractional part. A conversion to a 32 bit integer would overflow for some of them.
+		// The mask is true only for the smaller values. It is false for NaN.
 		__m128 abs_input = _mm_and_ps(input, _mm_castsi128_ps(abs_mask));
-		__m128 is_input_large = _mm_cmpge_ps(abs_input, fractional_limit);
-
-		// Test if our input is NaN with (value != value), it is only true for NaN
-		__m128 is_nan = _mm_cmpneq_ps(input, input);
-
-		// Combine our masks to determine if we should return the original value
-		__m128 use_original_input = _mm_or_ps(is_input_large, is_nan);
+		__m128 is_input_small = _mm_cmplt_ps(abs_input, fractional_limit);
 
 		const __m128 sign_mask = _mm_set_ps(-0.0F, -0.0F, -0.0F, -0.0F);
 		__m128 sign = _mm_and_ps(input, sign_mask);
 
-		// For positive values, we add a bias of 0.5.
-		// For negative values, we add a bias of -0.5.
-		__m128 bias = _mm_or_ps(sign, _mm_set_ps1(0.5F));
-		__m128 biased_input = _mm_add_ps(input, bias);
-
 		// Convert to an integer with truncation and back, this rounds towards zero.
-		__m128 integer_part = _mm_cvtepi32_ps(_mm_cvttps_epi32(biased_input));
+		__m128 integer_part = _mm_cvtepi32_ps(_mm_cvttps_epi32(input));
 
-		return _mm_or_ps(_mm_and_ps(use_original_input, input), _mm_andnot_ps(use_original_input, integer_part));
-#elif defined(RTM_NEON_INTRINSICS) && !defined(RTM_NEON64_INTRINSICS) // arm64 is faster with scalar code
-		// NaN, +- Infinity, and numbers larger or equal to 2^23 remain unchanged
-		// since they have no fractional part.
+		__m128 abs_fraction = _mm_and_ps(_mm_sub_ps(input, integer_part), _mm_castsi128_ps(abs_mask));
+		__m128 is_fraction_half_or_more = _mm_cmpge_ps(abs_fraction, _mm_set_ps1(0.5F));
 
+		// The bias is +- 1.0 with the sign of the input, or 0.0
+		__m128 bias = _mm_and_ps(is_fraction_half_or_more, _mm_or_ps(sign, _mm_set_ps1(1.0F)));
+		integer_part = _mm_add_ps(integer_part, bias);
+
+		// Keep the sign of the input as std::round does, thus round(-0.0) = -0.0 and round(-0.3) = -0.0
+		integer_part = _mm_or_ps(integer_part, sign);
+
+		return _mm_or_ps(_mm_and_ps(is_input_small, integer_part), _mm_andnot_ps(is_input_small, input));
+#elif defined(RTM_WASM128_INTRINSICS)
+		// Truncate and add one with the sign of the input when the fractional part is 0.5 or more.
+		// The subtraction of the truncated value is exact, unlike the addition of a 0.5 bias.
+		// NaN and +- Infinity remain unchanged since their fractional part is NaN.
+		const v128_t sign_mask = wasm_f32x4_splat(-0.0F);
+		const v128_t sign = wasm_v128_and(input, sign_mask);
+		const v128_t truncated = wasm_f32x4_trunc(input);
+		const v128_t fraction = wasm_f32x4_abs(wasm_f32x4_sub(input, truncated));
+		const v128_t is_half_or_more = wasm_f32x4_ge(fraction, wasm_f32x4_splat(0.5F));
+		const v128_t signed_one = wasm_v128_or(sign, wasm_f32x4_splat(1.0F));
+		const v128_t result = wasm_f32x4_add(truncated, wasm_v128_and(is_half_or_more, signed_one));
+
+		// Keep the sign of the input as std::round does, thus round(-0.0) = -0.0 and round(-0.3) = -0.0
+		return wasm_v128_or(result, sign);
+#elif defined(RTM_NEON64_INTRINSICS)
+		// This instruction rounds half away from zero, as std::round does
+		return vrndaq_f32(input);
+#elif defined(RTM_NEON_INTRINSICS)
 		float32x4_t fractional_limit = vdupq_n_f32(8388608.0F); // 2^23
 
-		// Build our mask, larger values that have no fractional part, and infinities will be true
-		// Smaller values and NaN will be false
-		uint32x4_t is_input_large = vcageq_f32(input, fractional_limit);
+		// NaN, +- Infinity, and numbers larger or equal to 2^23 remain unchanged
+		// since they have no fractional part. A conversion to a 32 bit integer would overflow for some of them.
+		// The mask is true only for the smaller values. It is false for NaN.
+		uint32x4_t is_input_small = vcaltq_f32(input, fractional_limit);
 
-		// Test if our input is NaN with (value != value), it is only true for NaN
-		uint32x4_t is_nan = vmvnq_u32(vceqq_f32(input, input));
-
-		// Combine our masks to determine if we should return the original value
-		uint32x4_t use_original_input = vorrq_u32(is_input_large, is_nan);
-
-        uint32x4_t sign_mask = vreinterpretq_u32_f32(vdupq_n_f32(-0.0F));
+		uint32x4_t sign_mask = vreinterpretq_u32_f32(vdupq_n_f32(-0.0F));
 		uint32x4_t sign = vandq_u32(vreinterpretq_u32_f32(input), sign_mask);
 
-		// For positive values, we add a bias of 0.5.
-		// For negative values, we add a bias of -0.5.
-		float32x4_t bias = vreinterpretq_f32_u32(vorrq_u32(sign, vreinterpretq_u32_f32(vdupq_n_f32(0.5F))));
-		float32x4_t biased_input = vaddq_f32(input, bias);
+		// Convert to an integer with truncation and back, this rounds towards zero.
+		float32x4_t integer_part = vcvtq_f32_s32(vcvtq_s32_f32(input));
 
-		// Convert to an integer and back. This does banker's rounding by default
-		float32x4_t integer_part = vcvtq_f32_s32(vcvtq_s32_f32(biased_input));
+		float32x4_t abs_fraction = vabsq_f32(vsubq_f32(input, integer_part));
+		uint32x4_t is_fraction_half_or_more = vcgeq_f32(abs_fraction, vdupq_n_f32(0.5F));
 
-		return vbslq_f32(use_original_input, input, integer_part);
+		// The bias is +- 1.0 with the sign of the input, or 0.0
+		uint32x4_t bias = vandq_u32(is_fraction_half_or_more, vorrq_u32(sign, vreinterpretq_u32_f32(vdupq_n_f32(1.0F))));
+		integer_part = vaddq_f32(integer_part, vreinterpretq_f32_u32(bias));
+
+		// Keep the sign of the input as std::round does, thus round(-0.0) = -0.0 and round(-0.3) = -0.0
+		integer_part = vreinterpretq_f32_u32(vorrq_u32(vreinterpretq_u32_f32(integer_part), sign));
+
+		return vbslq_f32(is_input_small, integer_part, input);
 #else
-		const vector4f half = vector_set(0.5F);
-		const vector4f floored = vector_floor(vector_add(input, half));
-		const vector4f ceiled = vector_ceil(vector_sub(input, half));
-		const mask4f is_greater_equal = vector_greater_equal(input, vector_zero());
-		return vector_select(is_greater_equal, floored, ceiled);
+		scalarf x = scalar_round_symmetric(scalarf(vector_get_x(input)));
+		scalarf y = scalar_round_symmetric(scalarf(vector_get_y(input)));
+		scalarf z = scalar_round_symmetric(scalarf(vector_get_z(input)));
+		scalarf w = scalar_round_symmetric(scalarf(vector_get_w(input)));
+		return vector_set(x, y, z, w);
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns per component the rounded input using banker's rounding (half to even).
-	// vector_round_bankers(2.5) = 2.0
-	// vector_round_bankers(1.5) = 2.0
-	// vector_round_bankers(1.2) = 1.0
-	// vector_round_bankers(-2.5) = -2.0
-	// vector_round_bankers(-1.5) = -2.0
-	// vector_round_bankers(-1.2) = -1.0
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns per component the rounded input using banker's rounding (half to even).
+	/// vector_round_bankers(2.5) = 2.0
+	/// vector_round_bankers(1.5) = 2.0
+	/// vector_round_bankers(1.2) = 1.0
+	/// vector_round_bankers(-2.5) = -2.0
+	/// vector_round_bankers(-1.5) = -2.0
+	/// vector_round_bankers(-1.2) = -1.0
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL vector_round_bankers(vector4f_arg0 input) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE4_INTRINSICS)
@@ -2906,12 +4241,17 @@ namespace rtm
 		__m128 truncating_offset = _mm_or_ps(sign, fractional_limit);
 		__m128 integer_part = _mm_sub_ps(_mm_add_ps(input, truncating_offset), truncating_offset);
 
+		// Keep the sign of the input as std::nearbyint does, thus round(-0.0) = -0.0 and round(-0.3) = -0.0
+		integer_part = _mm_or_ps(integer_part, sign);
+
 		// If our input was so large that it had no fractional part, return it unchanged
 		// Otherwise return our integer part
 		const __m128i abs_mask = _mm_set_epi32(0x7FFFFFFFULL, 0x7FFFFFFFULL, 0x7FFFFFFFULL, 0x7FFFFFFFULL);
 		__m128 abs_input = _mm_and_ps(input, _mm_castsi128_ps(abs_mask));
 		__m128 is_input_large = _mm_cmpge_ps(abs_input, fractional_limit);
 		return _mm_or_ps(_mm_and_ps(is_input_large, input), _mm_andnot_ps(is_input_large, integer_part));
+#elif defined(RTM_WASM128_INTRINSICS)
+		return wasm_f32x4_nearest(input);
 #elif defined(RTM_NEON64_INTRINSICS)
 		return vrndnq_f32(input);
 #elif defined(RTM_NEON_INTRINSICS)
@@ -2927,6 +4267,9 @@ namespace rtm
 		float32x4_t truncating_offset = vreinterpretq_f32_u32(vorrq_u32(sign, vreinterpretq_u32_f32(fractional_limit)));
 		float32x4_t integer_part = vsubq_f32(vaddq_f32(input, truncating_offset), truncating_offset);
 
+		// Keep the sign of the input as std::nearbyint does, thus round(-0.0) = -0.0 and round(-0.3) = -0.0
+		integer_part = vreinterpretq_f32_u32(vorrq_u32(vreinterpretq_u32_f32(integer_part), sign));
+
 		// If our input was so large that it had no fractional part, return it unchanged
 		// Otherwise return our integer part
 		uint32x4_t is_input_large = vcageq_f32(input, fractional_limit);
@@ -2940,9 +4283,71 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns per component the sine of the input angle.
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns per component the natural exponential of the input: e^input.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK inline vector4f RTM_SIMD_CALL vector_exp(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+#if defined(RTM_SSE2_INTRINSICS) || defined(RTM_WASM128_INTRINSICS) || defined(RTM_NEON_INTRINSICS)
+		return rtm_impl::exp_f32x4(input);
+#else
+		scalarf x = scalar_exp(scalarf(vector_get_x(input)));
+		scalarf y = scalar_exp(scalarf(vector_get_y(input)));
+		scalarf z = scalar_exp(scalarf(vector_get_z(input)));
+		scalarf w = scalar_exp(scalarf(vector_get_w(input)));
+		return vector_set(x, y, z, w);
+#endif
+	}
+
+	/// Returns per component the natural logarithm of the input.
+	/// The result is -inf when the input is zero, and NaN when the input is negative.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK inline vector4f RTM_SIMD_CALL vector_log(vector4f_arg0 input) RTM_NO_EXCEPT
+	{
+#if defined(RTM_SSE2_INTRINSICS) || defined(RTM_WASM128_INTRINSICS) || defined(RTM_NEON_INTRINSICS)
+		return rtm_impl::log_f32x4(input);
+#else
+		scalarf x = scalar_log(scalarf(vector_get_x(input)));
+		scalarf y = scalar_log(scalarf(vector_get_y(input)));
+		scalarf z = scalar_log(scalarf(vector_get_z(input)));
+		scalarf w = scalar_log(scalarf(vector_get_w(input)));
+		return vector_set(x, y, z, w);
+#endif
+	}
+
+	/// Per component exponential interpolation of the two inputs at the specified alpha.
+	/// The formula used is: start * (end / start)^alpha.
+	/// For equal steps of alpha, the result changes by the same ratio. Use it to interpolate a scale.
+	/// The result is 'start' when alpha is 0.0. It is approximately 'end' when alpha is 1.0.
+	/// The two inputs must have the same sign and must not be zero. Otherwise, the result is undefined.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK inline vector4f RTM_SIMD_CALL vector_eerp(vector4f_arg0 start, vector4f_arg1 end, float alpha) RTM_NO_EXCEPT
+	{
+		// start * (end / start)^alpha == start * exp(alpha * log(end / start))
+		return vector_mul(start, vector_exp(vector_mul(vector_log(vector_div(end, start)), alpha)));
+	}
+
+#if defined(RTM_SSE2_INTRINSICS)
+	/// Per component exponential interpolation of the two inputs at the specified alpha.
+	/// The formula used is: start * (end / start)^alpha.
+	/// For equal steps of alpha, the result changes by the same ratio. Use it to interpolate a scale.
+	/// The result is 'start' when alpha is 0.0. It is approximately 'end' when alpha is 1.0.
+	/// The two inputs must have the same sign and must not be zero. Otherwise, the result is undefined.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK inline vector4f RTM_SIMD_CALL vector_eerp(vector4f_arg0 start, vector4f_arg1 end, scalarf_arg2 alpha) RTM_NO_EXCEPT
+	{
+		// start * (end / start)^alpha == start * exp(alpha * log(end / start))
+		return vector_mul(start, vector_exp(vector_mul(vector_log(vector_div(end, start)), vector_set(alpha))));
+	}
+#endif
+
+	/// Per component exponential interpolation of the two inputs at the specified alpha.
+	/// The formula used is: start * (end / start)^alpha.
+	/// For equal steps of alpha, the result changes by the same ratio. Use it to interpolate a scale.
+	/// The result is 'start' when alpha is 0.0. It is approximately 'end' when alpha is 1.0.
+	/// The two inputs must have the same sign and must not be zero. Otherwise, the result is undefined.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK inline vector4f RTM_SIMD_CALL vector_eerp(vector4f_arg0 start, vector4f_arg1 end, vector4f_arg2 alpha) RTM_NO_EXCEPT
+	{
+		// start * (end / start)^alpha == start * exp(alpha * log(end / start))
+		return vector_mul(start, vector_exp(vector_mul(vector_log(vector_div(end, start)), alpha)));
+	}
+
+	/// Returns per component the sine of the input angle.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK inline vector4f RTM_SIMD_CALL vector_sin(vector4f_arg0 input) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
@@ -2976,6 +4381,37 @@ namespace rtm
 		result = _mm_add_ps(_mm_mul_ps(result, x2), _mm_set_ps1(-1.6666666601721269e-1F));
 		result = _mm_add_ps(_mm_mul_ps(result, x2), _mm_set_ps1(1.0F));
 		result = _mm_mul_ps(result, x);
+		return result;
+#elif defined(RTM_WASM128_INTRINSICS)
+		// Use a degree 11 minimax approximation polynomial
+		// See: GPGPU Programming for Games and Science (David H. Eberly)
+
+		// Remap our input in the [-pi, pi] range
+		v128_t quotient = wasm_f32x4_mul(input, wasm_f32x4_splat(constants::one_div_two_pi()));
+		quotient = vector_round_bankers(quotient);
+		quotient = wasm_f32x4_mul(quotient, wasm_f32x4_splat(constants::two_pi()));
+		v128_t x = wasm_f32x4_sub(input, quotient);
+
+		// Remap our input in the [-pi/2, pi/2] range
+		const v128_t sign_mask = wasm_f32x4_splat(-0.0F);
+		v128_t sign = wasm_v128_and(x, sign_mask);
+		v128_t reference = wasm_v128_or(sign, wasm_f32x4_splat(constants::pi()));
+
+		const v128_t reflection = wasm_f32x4_sub(reference, x);
+		const v128_t x_abs = wasm_f32x4_abs(x);
+
+		v128_t is_less_equal_than_half_pi = wasm_f32x4_le(x_abs, wasm_f32x4_splat(constants::half_pi()));
+
+		x = RTM_VECTOR4F_SELECT(is_less_equal_than_half_pi, x, reflection);
+
+		// Calculate our value
+		const v128_t x2 = wasm_f32x4_mul(x, x);
+		v128_t result = wasm_f32x4_add(wasm_f32x4_mul(x2, wasm_f32x4_splat(-2.3828544692960918e-8F)), wasm_f32x4_splat(2.7521557770526783e-6F));
+		result = wasm_f32x4_add(wasm_f32x4_mul(result, x2), wasm_f32x4_splat(-1.9840782426250314e-4F));
+		result = wasm_f32x4_add(wasm_f32x4_mul(result, x2), wasm_f32x4_splat(8.3333303183525942e-3F));
+		result = wasm_f32x4_add(wasm_f32x4_mul(result, x2), wasm_f32x4_splat(-1.6666666601721269e-1F));
+		result = wasm_f32x4_add(wasm_f32x4_mul(result, x2), wasm_f32x4_splat(1.0F));
+		result = wasm_f32x4_mul(result, x);
 		return result;
 #elif defined(RTM_NEON_INTRINSICS)
 		// Use a degree 11 minimax approximation polynomial
@@ -3020,10 +4456,8 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns per component the arc-sine of the input.
-	// Input value must be in the range [-1.0, 1.0].
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns per component the arc-sine of the input.
+	/// Input value must be in the range [-1.0, 1.0].
 	RTM_DISABLE_SECURITY_COOKIE_CHECK inline vector4f RTM_SIMD_CALL vector_asin(vector4f_arg0 input) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
@@ -3060,6 +4494,40 @@ namespace rtm
 		// And our result has the opposite sign of the input
 		result = _mm_xor_ps(result, _mm_xor_ps(input_sign, sign_bit));
 		return _mm_add_ps(result, offset);
+#elif defined(RTM_WASM128_INTRINSICS)
+		// Use a degree 7 minimax approximation polynomial
+		// See: GPGPU Programming for Games and Science (David H. Eberly)
+
+		// We first calculate our scale: sqrt(1.0 - abs(value))
+		// Use the sign bit to generate our absolute value since we'll re-use that constant
+		const v128_t sign_bit = wasm_f32x4_splat(-0.0F);
+		v128_t abs_value = wasm_f32x4_abs(input);
+
+		// Calculate our value
+		v128_t result = wasm_f32x4_add(wasm_f32x4_mul(abs_value, wasm_f32x4_splat(-1.2690614339589956e-3F)), wasm_f32x4_splat(6.7072304676685235e-3F));
+		result = wasm_f32x4_add(wasm_f32x4_mul(result, abs_value), wasm_f32x4_splat(-1.7162031184398074e-2F));
+		result = wasm_f32x4_add(wasm_f32x4_mul(result, abs_value), wasm_f32x4_splat(3.0961594977611639e-2F));
+		result = wasm_f32x4_add(wasm_f32x4_mul(result, abs_value), wasm_f32x4_splat(-5.0207843052845647e-2F));
+		result = wasm_f32x4_add(wasm_f32x4_mul(result, abs_value), wasm_f32x4_splat(8.8986946573346160e-2F));
+		result = wasm_f32x4_add(wasm_f32x4_mul(result, abs_value), wasm_f32x4_splat(-2.1459960076929829e-1F));
+		result = wasm_f32x4_add(wasm_f32x4_mul(result, abs_value), wasm_f32x4_splat(1.5707963267948966F));
+
+		// Scale our result
+		v128_t scale = wasm_f32x4_sqrt(wasm_f32x4_sub(wasm_f32x4_splat(1.0F), abs_value));
+		result = wasm_f32x4_mul(result, scale);
+
+		// Normally the math is as follow:
+		// If input is positive: PI/2 - result
+		// If input is negative: PI/2 - (PI - result) = PI/2 - PI + result = -PI/2 + result
+
+		// As such, the offset is PI/2 and it takes the sign of the input
+		// This allows us to load a single constant from memory directly
+		v128_t input_sign = wasm_v128_and(input, sign_bit);
+		v128_t offset = wasm_v128_or(input_sign, wasm_f32x4_splat(constants::half_pi()));
+
+		// And our result has the opposite sign of the input
+		result = wasm_v128_xor(result, wasm_v128_xor(input_sign, sign_bit));
+		return wasm_f32x4_add(result, offset);
 #else
 		scalarf x = scalar_asin(scalarf(vector_get_x(input)));
 		scalarf y = scalar_asin(scalarf(vector_get_y(input)));
@@ -3069,9 +4537,7 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns per component the cosine of the input angle.
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns per component the cosine of the input angle.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK inline vector4f RTM_SIMD_CALL vector_cos(vector4f_arg0 input) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
@@ -3106,6 +4572,37 @@ namespace rtm
 
 		// Remap into [-pi, pi]
 		return _mm_or_ps(result, _mm_andnot_ps(is_less_equal_than_half_pi, sign_mask));
+#elif defined(RTM_WASM128_INTRINSICS)
+		// Use a degree 10 minimax approximation polynomial
+		// See: GPGPU Programming for Games and Science (David H. Eberly)
+
+		// Remap our input in the [-pi, pi] range
+		v128_t quotient = wasm_f32x4_mul(input, wasm_f32x4_splat(constants::one_div_two_pi()));
+		quotient = vector_round_bankers(quotient);
+		quotient = wasm_f32x4_mul(quotient, wasm_f32x4_splat(constants::two_pi()));
+		v128_t x = wasm_f32x4_sub(input, quotient);
+
+		// Remap our input in the [-pi/2, pi/2] range
+		const v128_t sign_mask = wasm_f32x4_splat(-0.0F);
+		v128_t x_sign = wasm_v128_and(x, sign_mask);
+		v128_t reference = wasm_v128_or(x_sign, wasm_f32x4_splat(constants::pi()));
+		const v128_t reflection = wasm_f32x4_sub(reference, x);
+
+		v128_t x_abs = wasm_f32x4_abs(x);
+		v128_t is_less_equal_than_half_pi = wasm_f32x4_le(x_abs, wasm_f32x4_splat(constants::half_pi()));
+
+		x = RTM_VECTOR4F_SELECT(is_less_equal_than_half_pi, x, reflection);
+
+		// Calculate our value
+		const v128_t x2 = wasm_f32x4_mul(x, x);
+		v128_t result = wasm_f32x4_add(wasm_f32x4_mul(x2, wasm_f32x4_splat(-2.6051615464872668e-7F)), wasm_f32x4_splat(2.4760495088926859e-5F));
+		result = wasm_f32x4_add(wasm_f32x4_mul(result, x2), wasm_f32x4_splat(-1.3888377661039897e-3F));
+		result = wasm_f32x4_add(wasm_f32x4_mul(result, x2), wasm_f32x4_splat(4.1666638865338612e-2F));
+		result = wasm_f32x4_add(wasm_f32x4_mul(result, x2), wasm_f32x4_splat(-4.9999999508695869e-1F));
+		result = wasm_f32x4_add(wasm_f32x4_mul(result, x2), wasm_f32x4_splat(1.0F));
+
+		// Remap into [-pi, pi]
+		return wasm_v128_or(result, wasm_v128_andnot(sign_mask, is_less_equal_than_half_pi));
 #elif defined(RTM_NEON_INTRINSICS)
 		// Use a degree 10 minimax approximation polynomial
 		// See: GPGPU Programming for Games and Science (David H. Eberly)
@@ -3149,10 +4646,8 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns per component the arc-cosine of the input.
-	// Input value must be in the range [-1.0, 1.0].
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns per component the arc-cosine of the input.
+	/// Input value must be in the range [-1.0, 1.0].
 	RTM_DISABLE_SECURITY_COOKIE_CHECK inline vector4f RTM_SIMD_CALL vector_acos(vector4f_arg0 input) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
@@ -3193,6 +4688,44 @@ namespace rtm
 		__m128 input_sign = _mm_and_ps(input, sign_bit);
 		result = _mm_or_ps(result, input_sign);
 		return _mm_add_ps(result, offset);
+#elif defined(RTM_WASM128_INTRINSICS)
+		// Use the identity: acos(value) + asin(value) = PI/2
+		// This ends up being: acos(value) = PI/2 - asin(value)
+		// Since asin(value) = PI/2 - sqrt(1.0 - polynomial(value))
+		// Our end result is acos(value) = sqrt(1.0 - polynomial(value))
+		// This means we can re-use the same polynomial as asin()
+		// See: GPGPU Programming for Games and Science (David H. Eberly)
+
+		// We first calculate our scale: sqrt(1.0 - abs(value))
+		// Use the sign bit to generate our absolute value since we'll re-use that constant
+		const v128_t sign_bit = wasm_f32x4_splat(-0.0F);
+		v128_t abs_value = wasm_f32x4_abs(input);
+
+		// Calculate our value
+		v128_t result = wasm_f32x4_add(wasm_f32x4_mul(abs_value, wasm_f32x4_splat(-1.2690614339589956e-3F)), wasm_f32x4_splat(6.7072304676685235e-3F));
+		result = wasm_f32x4_add(wasm_f32x4_mul(result, abs_value), wasm_f32x4_splat(-1.7162031184398074e-2F));
+		result = wasm_f32x4_add(wasm_f32x4_mul(result, abs_value), wasm_f32x4_splat(3.0961594977611639e-2F));
+		result = wasm_f32x4_add(wasm_f32x4_mul(result, abs_value), wasm_f32x4_splat(-5.0207843052845647e-2F));
+		result = wasm_f32x4_add(wasm_f32x4_mul(result, abs_value), wasm_f32x4_splat(8.8986946573346160e-2F));
+		result = wasm_f32x4_add(wasm_f32x4_mul(result, abs_value), wasm_f32x4_splat(-2.1459960076929829e-1F));
+		result = wasm_f32x4_add(wasm_f32x4_mul(result, abs_value), wasm_f32x4_splat(1.5707963267948966F));
+
+		// Scale our result
+		v128_t scale = wasm_f32x4_sqrt(wasm_f32x4_sub(wasm_f32x4_splat(1.0F), abs_value));
+		result = wasm_f32x4_mul(result, scale);
+
+		// Normally the math is as follow:
+		// If input is positive: result
+		// If input is negative: PI - result = -result + PI
+
+		// As such, the offset is 0.0 when the input is positive and PI when negative
+		v128_t is_input_negative = wasm_f32x4_lt(input, wasm_f32x4_splat(0.0F));
+		v128_t offset = wasm_v128_and(is_input_negative, wasm_f32x4_splat(constants::pi()));
+
+		// And our result has the same sign of the input
+		v128_t input_sign = wasm_v128_and(input, sign_bit);
+		result = wasm_v128_or(result, input_sign);
+		return wasm_f32x4_add(result, offset);
 #else
 		scalarf x = scalar_acos(scalarf(vector_get_x(input)));
 		scalarf y = scalar_acos(scalarf(vector_get_y(input)));
@@ -3202,9 +4735,7 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns per component the sine and cosine of the input angle.
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns per component the sine and cosine of the input angle.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK inline void RTM_SIMD_CALL vector_sincos(vector4f_arg0 input, vector4f& out_sine, vector4f& out_cosine) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
@@ -3247,6 +4778,45 @@ namespace rtm
 		sine_result = _mm_add_ps(_mm_mul_ps(sine_result, x2), _mm_set_ps1(-1.6666666601721269e-1F));
 		sine_result = _mm_add_ps(_mm_mul_ps(sine_result, x2), _mm_set_ps1(1.0F));
 		out_sine = _mm_mul_ps(sine_result, x);
+#elif defined(RTM_WASM128_INTRINSICS)
+		// Use a degree 10 minimax approximation polynomial
+		// See: GPGPU Programming for Games and Science (David H. Eberly)
+
+		// Remap our input in the [-pi, pi] range
+		v128_t quotient = wasm_f32x4_mul(input, wasm_f32x4_splat(constants::one_div_two_pi()));
+		quotient = vector_round_bankers(quotient);
+		quotient = wasm_f32x4_mul(quotient, wasm_f32x4_splat(constants::two_pi()));
+		v128_t x = wasm_f32x4_sub(input, quotient);
+
+		// Remap our input in the [-pi/2, pi/2] range
+		const v128_t sign_mask = wasm_f32x4_splat(-0.0F);
+		v128_t x_sign = wasm_v128_and(x, sign_mask);
+		v128_t reference = wasm_v128_or(x_sign, wasm_f32x4_splat(constants::pi()));
+		const v128_t reflection = wasm_f32x4_sub(reference, x);
+
+		v128_t x_abs = wasm_f32x4_abs(x);
+		v128_t is_less_equal_than_half_pi = wasm_f32x4_le(x_abs, wasm_f32x4_splat(constants::half_pi()));
+
+		x = RTM_VECTOR4F_SELECT(is_less_equal_than_half_pi, x, reflection);
+		const v128_t x2 = wasm_f32x4_mul(x, x);
+
+		// Calculate our cosine value
+		v128_t cosine_result = wasm_f32x4_add(wasm_f32x4_mul(x2, wasm_f32x4_splat(-2.6051615464872668e-7F)), wasm_f32x4_splat(2.4760495088926859e-5F));
+		cosine_result = wasm_f32x4_add(wasm_f32x4_mul(cosine_result, x2), wasm_f32x4_splat(-1.3888377661039897e-3F));
+		cosine_result = wasm_f32x4_add(wasm_f32x4_mul(cosine_result, x2), wasm_f32x4_splat(4.1666638865338612e-2F));
+		cosine_result = wasm_f32x4_add(wasm_f32x4_mul(cosine_result, x2), wasm_f32x4_splat(-4.9999999508695869e-1F));
+		cosine_result = wasm_f32x4_add(wasm_f32x4_mul(cosine_result, x2), wasm_f32x4_splat(1.0F));
+
+		// Remap into [-pi, pi]
+		out_cosine = wasm_v128_or(cosine_result, wasm_v128_andnot(sign_mask, is_less_equal_than_half_pi));
+
+		// Calculate our sine value
+		v128_t sine_result = wasm_f32x4_add(wasm_f32x4_mul(x2, wasm_f32x4_splat(-2.3828544692960918e-8F)), wasm_f32x4_splat(2.7521557770526783e-6F));
+		sine_result = wasm_f32x4_add(wasm_f32x4_mul(sine_result, x2), wasm_f32x4_splat(-1.9840782426250314e-4F));
+		sine_result = wasm_f32x4_add(wasm_f32x4_mul(sine_result, x2), wasm_f32x4_splat(8.3333303183525942e-3F));
+		sine_result = wasm_f32x4_add(wasm_f32x4_mul(sine_result, x2), wasm_f32x4_splat(-1.6666666601721269e-1F));
+		sine_result = wasm_f32x4_add(wasm_f32x4_mul(sine_result, x2), wasm_f32x4_splat(1.0F));
+		out_sine = wasm_f32x4_mul(sine_result, x);
 #elif defined(RTM_NEON_INTRINSICS)
 		// Use a degree 10 minimax approximation polynomial
 		// See: GPGPU Programming for Games and Science (David H. Eberly)
@@ -3300,9 +4870,7 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns per component the tangent of the input angle.
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns per component the tangent of the input angle.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK inline vector4f RTM_SIMD_CALL vector_tan(vector4f_arg0 angle) RTM_NO_EXCEPT
 	{
 		// Use the identity: tan(angle) = sin(angle) / cos(angle)
@@ -3316,11 +4884,9 @@ namespace rtm
 		return vector_select(is_cos_zero, signed_infinity, result);
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns per component the arc-tangent of the input.
-	// Note that due to the sign ambiguity, atan cannot determine which quadrant
-	// the value resides in.
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns per component the arc-tangent of the input.
+	/// Note that due to the sign ambiguity, atan cannot determine which quadrant
+	/// the value resides in.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK inline vector4f RTM_SIMD_CALL vector_atan(vector4f_arg0 input) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
@@ -3354,6 +4920,36 @@ namespace rtm
 
 		// Keep the original sign
 		return _mm_or_ps(result, _mm_and_ps(input, _mm_set_ps1(-0.0F)));
+#elif defined(RTM_WASM128_INTRINSICS)
+		// Use a degree 13 minimax approximation polynomial
+		// See: GPGPU Programming for Games and Science (David H. Eberly)
+
+		// Discard our sign, we'll restore it later
+		v128_t abs_value = wasm_f32x4_abs(input);
+
+		// Compute our value
+		v128_t is_larger_than_one = wasm_f32x4_gt(abs_value, wasm_f32x4_splat(1.0F));
+		v128_t reciprocal = vector_reciprocal(abs_value);
+
+		v128_t x = vector_select(is_larger_than_one, reciprocal, abs_value);
+
+		v128_t x2 = wasm_f32x4_mul(x, x);
+
+		v128_t result = wasm_f32x4_add(wasm_f32x4_mul(x2, wasm_f32x4_splat(7.2128853633444123e-3F)), wasm_f32x4_splat(-3.5059680836411644e-2F));
+		result = wasm_f32x4_add(wasm_f32x4_mul(result, x2), wasm_f32x4_splat(8.1675882859940430e-2F));
+		result = wasm_f32x4_add(wasm_f32x4_mul(result, x2), wasm_f32x4_splat(-1.3374657325451267e-1F));
+		result = wasm_f32x4_add(wasm_f32x4_mul(result, x2), wasm_f32x4_splat(1.9856563505717162e-1F));
+		result = wasm_f32x4_add(wasm_f32x4_mul(result, x2), wasm_f32x4_splat(-3.3324998579202170e-1F));
+		result = wasm_f32x4_add(wasm_f32x4_mul(result, x2), wasm_f32x4_splat(1.0F));
+		result = wasm_f32x4_mul(result, x);
+
+		v128_t remapped = wasm_f32x4_sub(wasm_f32x4_splat(constants::half_pi()), result);
+
+		// pi/2 - result
+		result = vector_select(is_larger_than_one, remapped, result);
+
+		// Keep the original sign
+		return wasm_v128_or(result, wasm_v128_and(input, wasm_f32x4_splat(-0.0F)));
 #elif defined(RTM_NEON_INTRINSICS)
 		// Use a degree 13 minimax approximation polynomial
 		// See: GPGPU Programming for Games and Science (David H. Eberly)
@@ -3398,12 +4994,10 @@ namespace rtm
 #endif
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns per component the arc-tangent of [y/x] using the sign of the arguments to
-	// determine the correct quadrant.
-	// Y represents the proportion of the y-coordinate.
-	// X represents the proportion of the x-coordinate.
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns per component the arc-tangent of [y/x] using the sign of the arguments to
+	/// determine the correct quadrant.
+	/// Y represents the proportion of the y-coordinate.
+	/// X represents the proportion of the x-coordinate.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK inline vector4f RTM_SIMD_CALL vector_atan2(vector4f_arg0 y, vector4f_arg1 x) RTM_NO_EXCEPT
 	{
 #if defined(RTM_SSE2_INTRINSICS)
@@ -3445,6 +5039,45 @@ namespace rtm
 		value = _mm_andnot_ps(inputs_are_zero, value);
 
 		return _mm_add_ps(value, offset);
+#elif defined(RTM_WASM128_INTRINSICS)
+		// If X == 0.0 and Y != 0.0, we return PI/2 with the sign of Y
+		// If X == 0.0 and Y == 0.0, we return 0.0
+		// If X > 0.0, we return atan(y/x)
+		// If X < 0.0, we return atan(y/x) + sign(Y) * PI
+		// See: https://en.wikipedia.org/wiki/Atan2#Definition_and_computation
+
+		const v128_t zero = wasm_f32x4_splat(0.0F);
+		v128_t is_x_zero = wasm_f32x4_eq(x, zero);
+		v128_t is_y_zero = wasm_f32x4_eq(y, zero);
+		v128_t inputs_are_zero = wasm_v128_and(is_x_zero, is_y_zero);
+
+		v128_t is_x_positive = wasm_f32x4_gt(x, zero);
+
+		const v128_t sign_mask = wasm_f32x4_splat(-0.0F);
+		v128_t y_sign = wasm_v128_and(y, sign_mask);
+
+		// If X == 0.0, our offset is PI/2 otherwise it is PI both with the sign of Y
+		v128_t half_pi = wasm_f32x4_splat(constants::half_pi());
+		v128_t pi = wasm_f32x4_splat(constants::pi());
+		v128_t offset = wasm_v128_or(wasm_v128_and(is_x_zero, half_pi), wasm_v128_andnot(pi, is_x_zero));
+		offset = wasm_v128_or(offset, y_sign);
+
+		// If X > 0.0, our offset is 0.0
+		offset = wasm_v128_andnot(offset, is_x_positive);
+
+		// If X == 0.0 and Y == 0.0, our offset is 0.0
+		offset = wasm_v128_andnot(offset, inputs_are_zero);
+
+		v128_t angle = wasm_f32x4_div(y, x);
+		v128_t value = vector_atan(angle);
+
+		// If X == 0.0, our value is 0.0 otherwise it is atan(y/x)
+		value = wasm_v128_andnot(value, is_x_zero);
+
+		// If X == 0.0 and Y == 0.0, our value is 0.0
+		value = wasm_v128_andnot(value, inputs_are_zero);
+
+		return wasm_f32x4_add(value, offset);
 #elif defined(RTM_NEON64_INTRINSICS)
 		// If X == 0.0 and Y != 0.0, we return PI/2 with the sign of Y
 		// If X == 0.0 and Y == 0.0, we return 0.0
@@ -3499,6 +5132,8 @@ namespace rtm
 		return vector_set(x_, y_, z_, w_);
 #endif
 	}
+
+	/// \}
 
 	RTM_IMPL_VERSION_NAMESPACE_END
 }

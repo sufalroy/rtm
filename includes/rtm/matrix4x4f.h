@@ -38,46 +38,136 @@ namespace rtm
 {
 	RTM_IMPL_VERSION_NAMESPACE_BEGIN
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns the desired 4x4 matrix axis.
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns the axis pointing in the forward direction of the default coordinate system (Z+).
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE constexpr vector4f RTM_SIMD_CALL matrix_get_coord_forward(matrix4x4f_arg0 input) RTM_NO_EXCEPT
+	{
+		return input.z_axis;
+	}
+
+	/// Returns the axis pointing in the up direction of the default coordinate system (Y+).
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE constexpr vector4f RTM_SIMD_CALL matrix_get_coord_up(matrix4x4f_arg0 input) RTM_NO_EXCEPT
+	{
+		return input.y_axis;
+	}
+
+	/// Returns the axis pointing in the cross direction of the default coordinate system (X+).
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE constexpr vector4f RTM_SIMD_CALL matrix_get_coord_cross(matrix4x4f_arg0 input) RTM_NO_EXCEPT
+	{
+		return input.x_axis;
+	}
+
+	/// Returns the axis holding the position of the default coordinate system (W+).
+	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE constexpr vector4f RTM_SIMD_CALL matrix_get_coord_position(matrix4x4f_arg0 input) RTM_NO_EXCEPT
+	{
+		return input.w_axis;
+	}
+
+	/// Returns the desired 4x4 matrix axis.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE constexpr vector4f RTM_SIMD_CALL matrix_get_axis(matrix4x4f_arg0 input, axis4 axis) RTM_NO_EXCEPT
 	{
 		return axis == axis4::x ? input.x_axis : (axis == axis4::y ? input.y_axis : (axis == axis4::z ? input.z_axis : input.w_axis));
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Multiplies two 4x4 matrices.
-	// Multiplication order is as follow: local_to_world = matrix_mul(local_to_object, object_to_world)
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns a new 4x4 matrix where the specified axis has been replaced on the input matrix.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK inline matrix4x4f RTM_SIMD_CALL matrix_set_axis(matrix4x4f_arg0 input, vector4f_arg5 axis_value, axis4 axis) RTM_NO_EXCEPT
+	{
+		switch (axis)
+		{
+			default:
+			case axis4::x:	return matrix4x4f{ axis_value, input.y_axis, input.z_axis, input.w_axis };
+			case axis4::y:	return matrix4x4f{ input.x_axis, axis_value, input.z_axis, input.w_axis };
+			case axis4::z:	return matrix4x4f{ input.x_axis, input.y_axis, axis_value, input.w_axis };
+			case axis4::w:	return matrix4x4f{ input.x_axis, input.y_axis, input.z_axis, axis_value };
+		}
+	}
+
+	/// Returns the desired 4x4 matrix component from the specified axis.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK inline rtm_impl::vector4f_vector_get_component RTM_SIMD_CALL matrix_get_component(matrix4x4f_arg0 input, axis4 axis, component4 component) RTM_NO_EXCEPT
+	{
+		switch (axis)
+		{
+			default:
+			case axis4::x:	return vector_get_component(input.x_axis, component);
+			case axis4::y:	return vector_get_component(input.y_axis, component);
+			case axis4::z:	return vector_get_component(input.z_axis, component);
+			case axis4::w:	return vector_get_component(input.w_axis, component);
+		}
+	}
+
+	/// Returns the desired 4x4 matrix component from the specified axis.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK inline scalarf RTM_SIMD_CALL matrix_get_component_as_scalar(matrix4x4f_arg0 input, axis4 axis, component4 component) RTM_NO_EXCEPT
+	{
+		switch (axis)
+		{
+			default:
+			case axis4::x:	return vector_get_component_as_scalar(input.x_axis, component);
+			case axis4::y:	return vector_get_component_as_scalar(input.y_axis, component);
+			case axis4::z:	return vector_get_component_as_scalar(input.z_axis, component);
+			case axis4::w:	return vector_get_component_as_scalar(input.w_axis, component);
+		}
+	}
+
+	/// Returns a new 4x4 matrix where the specified axis/component has been replaced on the input matrix.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK inline matrix4x4f RTM_SIMD_CALL matrix_set_component(matrix4x4f_arg0 input, float component_value, axis4 axis, component4 component) RTM_NO_EXCEPT
+	{
+		switch (axis)
+		{
+			default:
+			case axis4::x:	return matrix4x4f{ vector_set_component(input.x_axis, component_value, component), input.y_axis, input.z_axis, input.w_axis };
+			case axis4::y:	return matrix4x4f{ input.x_axis, vector_set_component(input.y_axis, component_value, component), input.z_axis, input.w_axis };
+			case axis4::z:	return matrix4x4f{ input.x_axis, input.y_axis, vector_set_component(input.z_axis, component_value, component), input.w_axis };
+			case axis4::w:	return matrix4x4f{ input.x_axis, input.y_axis, input.z_axis, vector_set_component(input.w_axis, component_value, component) };
+		}
+	}
+
+#if defined(RTM_SSE2_INTRINSICS)
+	/// Returns a new 4x4 matrix where the specified axis/component has been replaced on the input matrix.
+	RTM_DISABLE_SECURITY_COOKIE_CHECK inline matrix4x4f RTM_SIMD_CALL matrix_set_component(matrix4x4f_arg0 input, scalarf_arg4 component_value, axis4 axis, component4 component) RTM_NO_EXCEPT
+	{
+		switch (axis)
+		{
+			default:
+			case axis4::x:	return matrix4x4f{ vector_set_component(input.x_axis, component_value, component), input.y_axis, input.z_axis, input.w_axis };
+			case axis4::y:	return matrix4x4f{ input.x_axis, vector_set_component(input.y_axis, component_value, component), input.z_axis, input.w_axis };
+			case axis4::z:	return matrix4x4f{ input.x_axis, input.y_axis, vector_set_component(input.z_axis, component_value, component), input.w_axis };
+			case axis4::w:	return matrix4x4f{ input.x_axis, input.y_axis, input.z_axis, vector_set_component(input.w_axis, component_value, component) };
+		}
+	}
+#endif
+
+	/// Multiplies two 4x4 matrices.
+	/// Multiplication order is as follow: local_to_world = matrix_mul(local_to_object, object_to_world)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK inline matrix4x4f RTM_SIMD_CALL matrix_mul(matrix4x4f_arg0 lhs, matrix4x4f_arg1 rhs) RTM_NO_EXCEPT
 	{
 		vector4f tmp = vector_mul(vector_dup_x(lhs.x_axis), rhs.x_axis);
 		tmp = vector_mul_add(vector_dup_y(lhs.x_axis), rhs.y_axis, tmp);
 		tmp = vector_mul_add(vector_dup_z(lhs.x_axis), rhs.z_axis, tmp);
+		tmp = vector_mul_add(vector_dup_w(lhs.x_axis), rhs.w_axis, tmp);
 		vector4f x_axis = tmp;
 
 		tmp = vector_mul(vector_dup_x(lhs.y_axis), rhs.x_axis);
 		tmp = vector_mul_add(vector_dup_y(lhs.y_axis), rhs.y_axis, tmp);
 		tmp = vector_mul_add(vector_dup_z(lhs.y_axis), rhs.z_axis, tmp);
+		tmp = vector_mul_add(vector_dup_w(lhs.y_axis), rhs.w_axis, tmp);
 		vector4f y_axis = tmp;
 
 		tmp = vector_mul(vector_dup_x(lhs.z_axis), rhs.x_axis);
 		tmp = vector_mul_add(vector_dup_y(lhs.z_axis), rhs.y_axis, tmp);
 		tmp = vector_mul_add(vector_dup_z(lhs.z_axis), rhs.z_axis, tmp);
+		tmp = vector_mul_add(vector_dup_w(lhs.z_axis), rhs.w_axis, tmp);
 		vector4f z_axis = tmp;
 
 		tmp = vector_mul(vector_dup_x(lhs.w_axis), rhs.x_axis);
 		tmp = vector_mul_add(vector_dup_y(lhs.w_axis), rhs.y_axis, tmp);
 		tmp = vector_mul_add(vector_dup_z(lhs.w_axis), rhs.z_axis, tmp);
-		vector4f w_axis = vector_add(rhs.w_axis, tmp);
+		tmp = vector_mul_add(vector_dup_w(lhs.w_axis), rhs.w_axis, tmp);
+		vector4f w_axis = tmp;
+
 		return matrix4x4f{ x_axis, y_axis, z_axis, w_axis };
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Multiplies a 4x4 matrix and a 4D vector.
-	// Multiplication order is as follow: world_position = matrix_mul(local_position, local_to_world)
-	//////////////////////////////////////////////////////////////////////////
+	/// Multiplies a 4x4 matrix and a 4D vector.
+	/// Multiplication order is as follow: world_position = matrix_mul(local_position, local_to_world)
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE vector4f RTM_SIMD_CALL matrix_mul_vector(vector4f_arg0 vec4, matrix4x4f_arg0 mtx) RTM_NO_EXCEPT
 	{
 		vector4f tmp;
@@ -90,9 +180,7 @@ namespace rtm
 		return tmp;
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Transposes a 4x4 matrix.
-	//////////////////////////////////////////////////////////////////////////
+	/// Transposes a 4x4 matrix.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK RTM_FORCE_INLINE matrix4x4f RTM_SIMD_CALL matrix_transpose(matrix4x4f_arg0 input) RTM_NO_EXCEPT
 	{
 		vector4f x_axis;
@@ -103,11 +191,9 @@ namespace rtm
 		return matrix4x4f{ x_axis, y_axis, z_axis, w_axis };
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Inverses a 4x4 matrix.
-	// If the input matrix is not invertible, the result is undefined.
-	// For a safe alternative, supply a fallback value and a threshold.
-	//////////////////////////////////////////////////////////////////////////
+	/// Inverses a 4x4 matrix.
+	/// If the input matrix is not invertible, the result is undefined.
+	/// For a safe alternative, supply a fallback value and a threshold.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK inline matrix4x4f RTM_SIMD_CALL matrix_inverse(matrix4x4f_arg0 input) RTM_NO_EXCEPT
 	{
 		matrix4x4f input_transposed = matrix_transpose(input);
@@ -185,7 +271,7 @@ namespace rtm
 		vector4f z_axis = vector_mix<mix4::x, mix4::b, mix4::z, mix4::d>(c4, c5);
 		vector4f w_axis = vector_mix<mix4::x, mix4::b, mix4::z, mix4::d>(c6, c7);
 
-		const scalarf det = vector_dot(x_axis, input_transposed.x_axis);
+		const scalarf det = vector_dot_as_scalar(x_axis, input_transposed.x_axis);
 		const scalarf inv_det_s = scalar_reciprocal(det);
 		const vector4f inv_det = vector_set(inv_det_s);
 
@@ -197,11 +283,9 @@ namespace rtm
 		return matrix4x4f{ x_axis, y_axis, z_axis, w_axis };
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Inverses a 4x4 matrix.
-	// If the input matrix has a determinant whose absolute value is below the supplied threshold, the
-	// fall back value is returned instead.
-	//////////////////////////////////////////////////////////////////////////
+	/// Inverses a 4x4 matrix.
+	/// If the input matrix has a determinant whose absolute value is below the supplied threshold, the
+	/// fall back value is returned instead.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK inline matrix4x4f RTM_SIMD_CALL matrix_inverse(matrix4x4f_arg0 input, matrix4x4f_arg1 fallback, float threshold = 1.0E-8F) RTM_NO_EXCEPT
 	{
 		matrix4x4f input_transposed = matrix_transpose(input);
@@ -279,7 +363,7 @@ namespace rtm
 		vector4f z_axis = vector_mix<mix4::x, mix4::b, mix4::z, mix4::d>(c4, c5);
 		vector4f w_axis = vector_mix<mix4::x, mix4::b, mix4::z, mix4::d>(c6, c7);
 
-		const scalarf det = vector_dot(x_axis, input_transposed.x_axis);
+		const scalarf det = vector_dot_as_scalar(x_axis, input_transposed.x_axis);
 		if (scalar_cast(scalar_abs(det)) < threshold)
 			return fallback;
 
@@ -294,9 +378,7 @@ namespace rtm
 		return matrix4x4f{ x_axis, y_axis, z_axis, w_axis };
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns the determinant of the input 4x4 matrix.
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns the determinant of the input 4x4 matrix.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK inline scalarf RTM_SIMD_CALL matrix_determinant(matrix4x4f_arg0 input) RTM_NO_EXCEPT
 	{
 		matrix4x4f input_transposed = matrix_transpose(input);
@@ -335,15 +417,13 @@ namespace rtm
 
 		vector4f x_axis = vector_mix<mix4::x, mix4::b, mix4::z, mix4::d>(c0, c1);
 
-		return vector_dot(x_axis, input_transposed.x_axis);
+		return vector_dot_as_scalar(x_axis, input_transposed.x_axis);
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns the minor of the input 4x4 matrix.
-	// See: https://en.wikipedia.org/wiki/Minor_(linear_algebra)
-	// The minor is the determinant of the sub-matrix input when the specified
-	// row and column are removed.
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns the minor of the input 4x4 matrix.
+	/// See: https://en.wikipedia.org/wiki/Minor_(linear_algebra)
+	/// The minor is the determinant of the sub-matrix input when the specified
+	/// row and column are removed.
 	RTM_DISABLE_SECURITY_COOKIE_CHECK inline scalarf RTM_SIMD_CALL matrix_minor(matrix4x4f_arg0 input, axis4 row, axis4 column) RTM_NO_EXCEPT
 	{
 		vector4f row0;
@@ -404,10 +484,8 @@ namespace rtm
 		return matrix_determinant(mtx);
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns the cofactor matrix of the input 4x4 matrix.
-	// See: https://en.wikipedia.org/wiki/Minor_(linear_algebra)#Cofactor_expansion_of_the_determinant
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns the cofactor matrix of the input 4x4 matrix.
+	/// See: https://en.wikipedia.org/wiki/Minor_(linear_algebra)#Cofactor_expansion_of_the_determinant
 	RTM_DISABLE_SECURITY_COOKIE_CHECK inline matrix4x4f RTM_SIMD_CALL matrix_cofactor(matrix4x4f_arg0 input) RTM_NO_EXCEPT
 	{
 		const scalarf minor_xx = matrix_minor(input, axis4::x, axis4::x);
@@ -440,10 +518,8 @@ namespace rtm
 		return matrix4x4f{ x_axis, y_axis, z_axis, w_axis };
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Returns the adjugate of the input matrix.
-	// See: https://en.wikipedia.org/wiki/Adjugate_matrix
-	//////////////////////////////////////////////////////////////////////////
+	/// Returns the adjugate of the input matrix.
+	/// See: https://en.wikipedia.org/wiki/Adjugate_matrix
 	RTM_DISABLE_SECURITY_COOKIE_CHECK inline matrix4x4f RTM_SIMD_CALL matrix_adjugate(matrix4x4f_arg0 input) RTM_NO_EXCEPT
 	{
 		return matrix_transpose(matrix_cofactor(input));
